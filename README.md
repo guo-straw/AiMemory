@@ -6,8 +6,6 @@
 
 **v0.2.3** 是 AiMemory 更名为知迹后的首个版本。升级会沿用原来的记忆库、模型配置和归档进度。[查看发布说明](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.3)
 
-记忆星图的视觉与交互参考了 Yuuyuko-uu 的作品。知迹用 Vue、TypeScript 和 Canvas 实现布局、仓库配色与记忆关联浏览。[星汐 dsh-xingxi](https://github.com/Yuuyuko-uu/dsh-xingxi) · [上游许可](src/licenses/dsh-xingxi/LICENSE)
-
 ## 下载 v0.2.3
 
 | 平台 | 安装包 |

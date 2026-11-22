@@ -6,8 +6,6 @@ KnowTrace is a desktop app for macOS and Windows that helps you find the decisio
 
 **v0.2.3** is the first release under the KnowTrace name. If you are upgrading from AiMemory, your existing library, model settings, and archive progress carry over. [Release notes](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.3)
 
-The memory graph draws on Yuuyuko-uu’s visual and interaction design. KnowTrace implements the layout, repository colors, and navigation between linked memories in Vue, TypeScript, and Canvas. [dsh-xingxi](https://github.com/Yuuyuko-uu/dsh-xingxi) · [Upstream license](src/licenses/dsh-xingxi/LICENSE)
-
 ## Download v0.2.3
 
 | Platform | Installer |
