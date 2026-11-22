@@ -1,0 +1,164 @@
+name: Release KnowTrace
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      releaseTag:
+        description: Release tag matching the project version
+        required: true
+        default: v0.2.3
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.releaseTag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check release versions
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.releaseTag || github.ref_name }}
+        run: |
+          python3 <<'PY'
+          import json, os, pathlib, tomllib
+          package = json.loads(pathlib.Path('package.json').read_text())
+          tauri = json.loads(pathlib.Path('src-tauri/tauri.conf.json').read_text())
+          cargo = tomllib.loads(pathlib.Path('src-tauri/Cargo.toml').read_text())
+          lock = tomllib.loads(pathlib.Path('src-tauri/Cargo.lock').read_text())
+          locked = next(item['version'] for item in lock['package'] if item['name'] == 'knowtrace')
+          version = package['version']
+          assert version == tauri['version'] == cargo['package']['version'] == locked, 'Project versions disagree'
+          assert os.environ['RELEASE_TAG'] == f'v{version}', 'Release tag must match the project version'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\ntag=v{version}\n')
+          PY
+
+  build:
+    needs: version
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check graph behavior
+        run: pnpm test:graph
+      - name: Check archive sidebar behavior
+        run: pnpm test:archive-sidebar
+      - name: Check model service configuration
+        run: pnpm test:model-services
+      - name: Test storage and built-in MCP
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --lib --bin knowtrace
+      - name: Configure macOS ad-hoc signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo 'APPLE_SIGNING_IDENTITY=-' >> "$GITHUB_ENV"
+      - name: Build installer
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        with:
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+          uploadUpdaterJson: false
+      - name: Collect release files
+        shell: bash
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { copyFileSync, mkdirSync } from 'node:fs';
+          import { basename, join } from 'node:path';
+          mkdirSync('release-assets');
+          const installers = JSON.parse(process.env.ARTIFACT_PATHS).filter(path => /\.(dmg|exe)$/.test(path));
+          assert.equal(installers.length, 1, 'Expected one installer for this target');
+          for (const path of installers) copyFileSync(path, join('release-assets', basename(path)));
+          JS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish application installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          本次更新：
+          - 应用正式更名为「知迹 · KnowTrace」，统一窗口、托盘、安装包、导出文件和 MCP 名称；沿用原有数据目录，保留已有记忆和配置。
+          - 人工结论优先生效，自动续写保留同一事项 ID；新增来源目录、逐轮原文依据和建议采用入口。
+          - 桌面和 HTTP MCP 共用检索逻辑，相同检索内容折叠显示，支持同组展开、精确 ID 与本地关键词回退。
+          - 单条 Markdown 保存改为增量索引；外部文件变更按需同步，正文与日志变更复用未受影响的向量。
+          - API 密钥使用 AES-256-GCM 加密保存在应用内部，首次使用时兼容旧系统凭据迁移。
+          - 仓库列表及详情时间显示年月日时分；记忆文件记录更新日志，详情右上角可直接查看。
+          - 设置新增开机自启开关；归档侧栏分别展示跳过轮次和索引失败。
+          - MCP 接入页保留内置 Streamable HTTP 服务，界面精简说明并更新 README。
+
+          仅提供 macOS arm64、macOS Intel x64 与 Windows x64 三个平台应用安装包，MCP 已内置于应用。
+
+          这是无发布者证书的构建：macOS 使用无证书 ad-hoc 签名，未经过 Apple 公证；Windows 安装包未签名。
+
+          在应用的「MCP 接入」页启动 HTTP 服务并复制地址即可接入。
+          NOTES
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+            gh release edit "$RELEASE_TAG" --title "知迹 KnowTrace $RELEASE_VERSION" --notes-file release-notes.md --draft=false
+          else
+            gh release create "$RELEASE_TAG" release-assets/* --target "$GITHUB_SHA" --title "知迹 KnowTrace $RELEASE_VERSION" --notes-file release-notes.md
+          fi

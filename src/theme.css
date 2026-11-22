@@ -1,0 +1,40 @@
+html[data-theme] { color: var(--fg); background: var(--bg); font-family: var(--font); }
+html[data-theme] body, html[data-theme] .app-shell, html[data-theme] .main-shell { color: var(--fg); background: var(--bg); }
+html[data-theme] input, html[data-theme] textarea, html[data-theme] select { color: var(--fg); background-color: var(--bg); }
+html[data-theme] input[type=checkbox], html[data-theme] input[type=range] { accent-color: var(--accent); }
+html[data-theme] kbd, html[data-theme] .breadcrumb-slash { color: var(--faint); }
+html[data-theme] .sidebar { background: var(--side); }
+html[data-theme] .primary-nav button:hover, html[data-theme] .repository-nav button:hover,
+html[data-theme] .repository-nav button.active, html[data-theme] .icon-button:hover,
+html[data-theme] .memory-result:hover { background: var(--hover); color: var(--fg); }
+html[data-theme] .primary-nav button.active { background: var(--soft); color: var(--accent-text); }
+html[data-theme] .button, html[data-theme] .related-link, html[data-theme] .modal { background: var(--bg); color: var(--fg); }
+html[data-theme] .button:hover { background: var(--surface); border-color: var(--accent-line); }
+html[data-theme] .button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+html[data-theme] .button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+html[data-theme] .memory-result.selected, html[data-theme] .related-link:hover { background: var(--soft); border-color: var(--accent-line); }
+html[data-theme] .memory-result.selected h2 { color: var(--accent-text); }
+html[data-theme] .list-empty h2, html[data-theme] .archive-log-empty h3,
+html[data-theme] .relation-options > label { color: var(--fg); }
+html[data-theme] .markdown blockquote, html[data-theme] .markdown pre, html[data-theme] .markdown code { background: var(--surface); }
+html[data-theme] .markdown blockquote { border-color: var(--accent-line); }
+html[data-theme] .markdown pre code { background: transparent; }
+html[data-theme] .markdown .memory-conclusion h2 { color: var(--accent-text); }
+html[data-theme] .editor-columns textarea { background: var(--bg); color: var(--fg); }
+html[data-theme] .editor-footer { background: color-mix(in srgb, var(--bg) 96%, transparent); }
+html[data-theme] .modal-backdrop, html[data-theme] .sidebar-scrim { background: color-mix(in srgb, var(--fg) 24%, transparent); }
+html[data-theme] .toast { background: var(--fg); color: var(--bg); border-color: var(--line); }
+html[data-theme] .toast svg { color: var(--bg); }
+html[data-theme] .toggle-label input { background: var(--line); border-color: var(--line); }
+html[data-theme] .toggle-label input:checked { background: var(--accent); border-color: var(--accent); }
+html[data-theme] .toggle-label input::after { background: var(--bg); }
+html[data-theme] .inline-error, html[data-theme] .result-index-state.failed,
+html[data-theme] .archive-turn-status.failed, html[data-theme] .archive-log .turn-error-row td { color: var(--danger); }
+html[data-theme] .error-banner, html[data-theme] .archive-error, html[data-theme] .memory-index-banner.failed { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-line); }
+html[data-theme] .warnings-banner, html[data-theme] .search-error, html[data-theme] .memory-index-banner { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-line); }
+html[data-theme] .search-error h2, html[data-theme] .search-error p,
+html[data-theme] .result-index-state, html[data-theme] .index-queue-button,
+html[data-theme] .archive-turn-status.extracting, html[data-theme] .archive-turn-status.pending { color: var(--warning); }
+html[data-theme] .connection-result, html[data-theme] .archive-turn-status.saved { color: var(--success); }
+html[data-theme] .search-field:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 9%, transparent); }
+

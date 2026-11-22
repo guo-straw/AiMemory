@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+dist/
+.tools/
+src-tauri/target/
+dev-data/
+output/imagegen/
+.DS_Store
+src-tauri/gen/
+design/
+docs/
+AGENTS.md
+*.md
+!README.md
+!/README.en.md
+/src-tauri/icons/README.md

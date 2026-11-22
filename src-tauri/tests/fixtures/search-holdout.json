@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "description": "优化后的独立留出集。期望 ID 在首次向量请求前确定；与固定十二题分别报告。",
+  "memories": [
+    {"id":"H-01","repository":"frontend","title":"报表任务收尾","conclusion":"每两秒轮询报表任务，完成或离开页面时停止计时器。","evidence":"报表任务完成或离开页面时停止两秒轮询。","tags":["报表"]},
+    {"id":"H-02","repository":"frontend","title":"网关固定灰度","conclusion":"lamp.grayscale.fixed-versions 按服务固定版本，并覆盖请求头。","evidence":"固定灰度配置覆盖请求头中的版本。","tags":["配置"]},
+    {"id":"H-03","repository":"frontend","title":"桌面入口","conclusion":"桌面程序的 Rust 入口位于 src-tauri/src/main.rs。","evidence":"桌面启动入口使用 src-tauri/src/main.rs。","tags":["入口"]},
+    {"id":"H-04","repository":"frontend","title":"代理连接排查","conclusion":"遇到 ERR_CONNECTION_RESET 时切换代理节点。","evidence":"ERR_CONNECTION_RESET 先通过切换节点排查。","tags":["代理"]},
+    {"id":"H-05","repository":"frontend","title":"下载权限提示","conclusion":"下载接口返回 HTTP 403 时显示无权限原因。","evidence":"HTTP 403 对应无权限，不提示网络断开。","tags":["下载"]},
+    {"id":"H-06","repository":"backend","title":"报表任务收尾","conclusion":"后端负责生成报表任务 ID，不维护页面计时器。","evidence":"后端只管理任务 ID，不维护浏览器的计时器。","tags":["报表"]},
+    {"id":"H-07","repository":"frontend","title":"组件资源回收","conclusion":"组件卸载时停止查询。","evidence":"第一场会话确认：卸载组件后清理查询计时器。","tags":["回收"]},
+    {"id":"H-08","repository":"frontend","title":"组件资源回收","conclusion":"组件卸载时停止查询。","evidence":"另一场会话独立确认：组件卸载时停止查询。","tags":["回收"]},
+    {"id":"H-09","repository":"frontend","title":"本地搜索索引","conclusion":"当前以 SQLite 保存搜索索引。","history":"此前以 JSON 文件保存索引，这个决定已失效。","evidence":"当前索引使用 SQLite。","tags":["本地索引"]},
+    {"id":"H-10","repository":"frontend","title":"更新检查时机","conclusion":"应用更新由用户点击检查按钮时查询。","evidence":"人工设置：点击按钮才检查更新。","manual":true,"tags":["更新"]}
+  ],
+  "queries": [
+    {"id":"H-Q01","category":"synonym","repository":"frontend","query":"切换到别的页面后，报表状态还会不停请求吗？","expectedIds":["H-01"]},
+    {"id":"H-Q02","category":"config","repository":"frontend","query":"如何配置`lamp.grayscale.fixed-versions`？","expectedIds":["H-02"]},
+    {"id":"H-Q03","category":"path","repository":"frontend","query":"src-tauri/src/main.rs是什么入口","expectedIds":["H-03"]},
+    {"id":"H-Q04","category":"error","repository":"frontend","query":"报错ERR_CONNECTION_RESET该怎么处理","expectedIds":["H-04"]},
+    {"id":"H-Q05","category":"error","repository":"frontend","query":"HTTP 403下载失败代表什么","expectedIds":["H-05"]},
+    {"id":"H-Q06","category":"cross-repository","repository":"backend","query":"报表任务收尾是否维护页面计时器","expectedIds":["H-06"]},
+    {"id":"H-Q07","category":"same-summary-different-evidence","repository":"frontend","query":"组件卸载如何停止查询","expectedIds":["H-07","H-08"]},
+    {"id":"H-Q08","category":"obsolete-decision","repository":"frontend","query":"JSON索引现在是否仍然有效","expectedIds":["H-09"]},
+    {"id":"H-Q09","category":"manual-decision","repository":"frontend","query":"应用更新是否自动检查","expectedIds":["H-10"]},
+    {"id":"H-Q10","category":"no-answer","repository":"frontend","query":"量子纠缠密钥每月几号轮换","expectedIds":[]},
+    {"id":"H-Q11","category":"missing-id","repository":"frontend","query":"H-not-found","mode":"id","expectedIds":[]}
+  ]
+}
