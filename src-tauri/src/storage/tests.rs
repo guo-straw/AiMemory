@@ -1,6 +1,88 @@
 use super::*;
 
 #[test]
+fn repository_rename_keeps_identity_and_delete_removes_links_after_rebuild() {
+    let root = fixture();
+    let mut vault = Vault::open(root.path()).unwrap();
+    let frontend = add_repository(&mut vault, "frontend");
+    let backend = add_repository(&mut vault, "backend");
+    let first = vault
+        .save(new_memory(&frontend, "前端轮询", "前端展示状态。"))
+        .unwrap();
+    let mut input = new_memory(&backend, "任务接口", "后端返回状态。");
+    input.related_ids.push(first.summary.id.clone());
+    let second = vault.save(input).unwrap();
+    let original = fs::read(&first.summary.path).unwrap();
+    assert!(vault.rename_repository(&frontend.id, "  ").is_err());
+    assert_eq!(fs::read(&first.summary.path).unwrap(), original);
+    vault
+        .rename_repository(&frontend.id, "  前端仓库  ")
+        .unwrap();
+    let renamed = vault
+        .workspace()
+        .unwrap()
+        .repositories
+        .into_iter()
+        .find(|r| r.id == frontend.id)
+        .unwrap();
+    assert_eq!(renamed.name, "前端仓库");
+    assert_eq!(renamed.remote, frontend.remote);
+    assert_eq!(renamed.memory_count, 1);
+    assert!(fs::read_to_string(&first.summary.path)
+        .unwrap()
+        .contains("repository_name: 前端仓库"));
+    assert_eq!(
+        vault.read(&first.summary.id).unwrap().related_ids,
+        vec![second.summary.id.clone()]
+    );
+    vault.rebuild().unwrap();
+    let moved_backend = root.path().join(&frontend.id).join("backend-note.md");
+    fs::rename(&second.summary.path, &moved_backend).unwrap();
+    fs::write(
+        root.path().join(&frontend.id).join("invalid.md"),
+        "---\ninvalid: [\n---\n",
+    )
+    .unwrap();
+    vault.refresh().unwrap();
+    assert_eq!(vault.workspace().unwrap().warnings.len(), 1);
+    vault.delete_repository(&frontend.id).unwrap();
+    assert!(vault.workspace().unwrap().warnings.is_empty());
+    assert!(!Path::new(&first.summary.path).exists());
+    assert!(moved_backend.is_file());
+    assert!(vault
+        .read(&second.summary.id)
+        .unwrap()
+        .related_ids
+        .is_empty());
+    assert!(vault.graph().unwrap().edges.is_empty());
+    let trash = fs::read_dir(root.path().join(".aimemory/trash"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert!(trash
+        .join("memories")
+        .join(&frontend.id)
+        .join(format!("{}.md", first.summary.id))
+        .is_file());
+    assert!(fs::read_to_string(trash.join("repository.json"))
+        .unwrap()
+        .contains("前端仓库"));
+    drop(vault);
+    let mut vault = Vault::open(root.path()).unwrap();
+    vault.rebuild().unwrap();
+    assert_eq!(vault.workspace().unwrap().repositories.len(), 1);
+    assert_eq!(vault.search(None, "").unwrap().len(), 1);
+    assert!(vault
+        .read(&second.summary.id)
+        .unwrap()
+        .outgoing_related_ids
+        .is_empty());
+    assert!(vault.delete_repository("missing").is_err());
+}
+
+#[test]
 fn update_log_tracks_real_changes_and_plain_markdown_summary_ignores_the_log() {
     let root = fixture();
     let mut vault = Vault::open(root.path()).unwrap();
@@ -55,6 +137,7 @@ fn external_conclusion_adoption_and_source_quotes_survive_reopen() {
                 "## 结论\n\n采用 SSE。\n\n## 原文依据\n\n> 首轮确认 SSE。\n",
             ),
             &source("1"),
+            &[],
         )
         .unwrap();
     assert_eq!(first.conclusion_owner, "auto");
@@ -81,6 +164,7 @@ fn external_conclusion_adoption_and_source_quotes_survive_reopen() {
         details: String::new(),
         evidence: "终态时停止。\n\n离开页面也停止。\n".into(),
         tags: Vec::new(),
+        ..Default::default()
     };
     let next = vault
         .extend_archive(&first.summary.id, &repo.id, &change, &source("2"), None)
@@ -469,7 +553,7 @@ fn archive_followups_preserve_edits_links_and_evidence_and_replay_once() {
     let id = "ARC-update";
     let mut input = new_memory(&repo, "检查更新", "## 结论\n\n支持检查正式版本。\n\n## 详细说明\n\n版本列表来自发布仓库。\n\n## 原文依据\n\n> 检查更新。\n");
     input.related_ids.push(related.summary.id.clone());
-    let first = vault.save_archive(id, input, &source(1)).unwrap();
+    let first = vault.save_archive(id, input, &source(1), &[]).unwrap();
     let mut edit = edit_memory(first);
     edit.title = "应用更新（人工命名）".into();
     edit.markdown = edit
@@ -487,6 +571,7 @@ fn archive_followups_preserve_edits_links_and_evidence_and_replay_once() {
         summary: "正式版支持直接下载。".into(),
         details: "在设置中选择下载位置。".into(),
         evidence: "不能直接下载吗？".into(),
+        ..Default::default()
     };
     assert!(vault
         .extend_archive(id, &other.id, &change, &source(2), None)

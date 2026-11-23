@@ -7,6 +7,10 @@ const emit = defineEmits<{ adopt: [sourceId: string] }>();
 </script>
 
 <template>
+  <details v-if="memory.codePaths?.length" class="source-directory">
+    <summary>涉及代码 · {{ memory.codePaths.length }} 个文件</summary>
+    <ul class="code-paths"><li v-for="path in memory.codePaths" :key="path"><code>{{ path }}</code></li></ul>
+  </details>
   <section v-if="memory.suggestions.length" class="conclusion-review" aria-label="结论与建议">
     <h2>当前结论 <small>{{ memory.conclusionOwner === 'manual' ? '人工确定' : '自动归档' }}</small></h2>
     <MarkdownView :markdown="memory.currentConclusion" />
@@ -42,4 +46,5 @@ blockquote { margin: 12px 0; padding-left: 14px; border-left: 2px solid var(--ac
 summary { cursor: pointer; overflow-wrap: anywhere; }
 .source-entry { margin-top: 14px; }
 .source-entry small { margin-top: 8px; }
+.code-paths { padding-left: 18px; margin: 12px 0 0; line-height: 1.9; overflow-wrap: anywhere; }
 </style>

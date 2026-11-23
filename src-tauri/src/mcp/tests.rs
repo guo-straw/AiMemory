@@ -1,5 +1,6 @@
 use super::*;
 use crate::storage::{MemoryInput, RepositoryInput};
+use std::process::Command;
 
 fn fixture() -> tempfile::TempDir {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dev-data/test-runs");

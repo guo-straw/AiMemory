@@ -1,6 +1,174 @@
 use super::*;
 
 #[test]
+fn deleting_a_repository_discards_its_queued_writes_and_allows_future_work() {
+    use crate::{
+        code_context::CodeRepository,
+        storage::{normalize_remote, repository_id},
+    };
+    let root = fixture();
+    let mut vault = Vault::open(root.path()).unwrap();
+    let mut pipeline = Pipeline::open(root.path()).unwrap();
+    let mut source = turn("queued");
+    let frontend =
+        repository_id(&normalize_remote(source.repository_remote.as_deref().unwrap()).unwrap());
+    let backend = vault
+        .add_repository(RepositoryInput {
+            name: "backend".into(),
+            remote: "https://github.com/example/backend".into(),
+        })
+        .unwrap();
+    source.code_repositories = vec![CodeRepository {
+        id: backend.id.clone(),
+        name: backend.name.clone(),
+        remote: backend.remote.clone(),
+        root: "/project/backend".into(),
+        files: vec!["src/api.rs".into()],
+    }];
+    let mut result = extraction();
+    result.memories[0].repository_id = Some(frontend.clone());
+    result.memories[0].related_indices = vec![1];
+    result.memories[1].repository_id = Some(backend.id.clone());
+    result.memories[1].code_paths = vec!["src/api.rs".into()];
+    ingest(&mut pipeline, &source);
+    pipeline
+        .extraction_complete(&source.source_id, &result)
+        .unwrap();
+    vault.delete_repository(&backend.id).unwrap();
+    pipeline.remove_deleted_memories(&backend.id).unwrap();
+    pipeline.materialize(&mut vault).unwrap();
+    assert_eq!(vault.workspace().unwrap().repositories.len(), 1);
+    assert_eq!(vault.search(Some(&frontend), "").unwrap().len(), 1);
+    assert!(vault.graph().unwrap().edges.is_empty());
+    pipeline.sync_embeddings(&vault, "fixture", true).unwrap();
+    assert_eq!(
+        pipeline
+            .status(false, None, false, None)
+            .unwrap()
+            .written_memories,
+        1
+    );
+    source.source_id = "new-work".into();
+    source.turn_id = "new-work".into();
+    result.memories.remove(0);
+    ingest(&mut pipeline, &source);
+    pipeline
+        .extraction_complete(&source.source_id, &result)
+        .unwrap();
+    pipeline.materialize(&mut vault).unwrap();
+    assert_eq!(vault.search(Some(&backend.id), "").unwrap().len(), 1);
+    assert_eq!(vault.workspace().unwrap().repositories.len(), 2);
+}
+
+#[test]
+fn cross_repository_archives_link_siblings_and_same_code_without_merging_unrelated_topics() {
+    use crate::code_context::CodeRepository;
+    use crate::storage::{normalize_remote, repository_id};
+    let root = fixture();
+    let mut vault = Vault::open(root.path()).unwrap();
+    let mut pipeline = Pipeline::open(root.path()).unwrap();
+    let mut source = turn("full-stack");
+    let frontend_remote = normalize_remote(source.repository_remote.as_deref().unwrap()).unwrap();
+    let frontend_id = repository_id(&frontend_remote);
+    let backend_remote = "https://github.com/example/backend";
+    let backend_id = repository_id(backend_remote);
+    source.code_repositories = vec![
+        CodeRepository {
+            id: frontend_id.clone(),
+            name: "frontend-web".into(),
+            remote: frontend_remote,
+            root: "/project/frontend-web".into(),
+            files: vec!["src/Status.vue".into(), "src/Other.vue".into()],
+        },
+        CodeRepository {
+            id: backend_id.clone(),
+            name: "backend".into(),
+            remote: backend_remote.into(),
+            root: "/project/backend".into(),
+            files: vec!["src/status.rs".into()],
+        },
+    ];
+    let mut result = extraction();
+    result.memories[0].repository_id = Some(frontend_id.clone());
+    result.memories[0].code_paths = vec!["src/Status.vue".into()];
+    result.memories[0].related_indices = vec![1];
+    result.memories[1].repository_id = Some(backend_id.clone());
+    result.memories[1].code_paths = vec!["src/status.rs".into()];
+    ingest(&mut pipeline, &source);
+    pipeline
+        .extraction_complete(&source.source_id, &result)
+        .unwrap();
+    pipeline.materialize(&mut vault).unwrap();
+    let first = vault.search(Some(&frontend_id), "").unwrap().remove(0);
+    let backend = vault.search(Some(&backend_id), "").unwrap().remove(0);
+    assert_eq!(vault.graph().unwrap().edges.len(), 1);
+    assert_eq!(
+        vault.read(&backend.id).unwrap().related_ids,
+        vec![first.id.clone()]
+    );
+    assert_eq!(
+        vault.read(&first.id).unwrap().code_paths,
+        vec!["src/Status.vue"]
+    );
+    let mut later = source.clone();
+    later.source_id = "later-source".into();
+    later.turn_id = "later".into();
+    later.session_id = "later-session".into();
+    later.code_repositories.truncate(1);
+    later.user_text = "任务状态轮询继续复用已有后端接口。".into();
+    let topics = pipeline.archive_topics(&later).unwrap();
+    assert!(topics
+        .iter()
+        .any(|topic| topic.id == first.id && topic.can_update));
+    assert!(topics
+        .iter()
+        .any(|topic| topic.id == backend.id && !topic.can_update));
+    result.memories.truncate(1);
+    result.memories[0].related_indices.clear();
+    result.memories[0].related_ids = vec![backend.id.clone()];
+    ingest(&mut pipeline, &later);
+    pipeline
+        .extraction_complete(&later.source_id, &result)
+        .unwrap();
+    pipeline.materialize(&mut vault).unwrap();
+    assert_eq!(vault.search(Some(&frontend_id), "").unwrap().len(), 2);
+    let latest = vault
+        .search(Some(&frontend_id), "")
+        .unwrap()
+        .into_iter()
+        .find(|m| m.id != first.id)
+        .unwrap();
+    assert_eq!(vault.read(&latest.id).unwrap().related_ids.len(), 2);
+    later.source_id = "independent-source".into();
+    later.turn_id = "independent".into();
+    result.memories[0].code_paths = vec!["src/Other.vue".into()];
+    result.memories[0].related_ids.clear();
+    ingest(&mut pipeline, &later);
+    pipeline
+        .extraction_complete(&later.source_id, &result)
+        .unwrap();
+    pipeline.materialize(&mut vault).unwrap();
+    let independent = vault
+        .search(Some(&frontend_id), "")
+        .unwrap()
+        .into_iter()
+        .find(|m| m.id != first.id && m.id != latest.id)
+        .unwrap();
+    assert!(vault.read(&independent.id).unwrap().related_ids.is_empty());
+    drop(vault);
+    let mut vault = Vault::open(root.path()).unwrap();
+    vault.rebuild().unwrap();
+    assert_eq!(vault.graph().unwrap().edges.len(), 3);
+    assert_eq!(
+        vault
+            .memories_for_code(&frontend_id, &["src/Status.vue".into()])
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
 fn lexical_archive_candidates_recover_an_old_topic_across_sessions() {
     let root = fixture();
     let mut vault = Vault::open(root.path()).unwrap();
@@ -141,6 +309,7 @@ fn turn(id: &str) -> CodexTurn {
         user_text: "任务完成或页面卸载时停止查询。".into(),
         assistant_text: "每两秒查询任务状态，失败时保留原因。".into(),
         session_path: "/codex/sessions/rollout-test.jsonl".into(),
+        code_repositories: Vec::new(),
     }
 }
 
@@ -156,6 +325,7 @@ fn extraction() -> ChatExtraction {
                 details: "页面卸载时同时清理计时器。".into(),
                 evidence: "任务完成或页面卸载时停止查询。".into(),
                 tags: vec!["轮询".into()],
+                ..Default::default()
             },
             ExtractedMemory {
                 op: None,
@@ -166,6 +336,7 @@ fn extraction() -> ChatExtraction {
                 details: "停止查询后仍可阅读失败原因。".into(),
                 evidence: "失败时保留原因。".into(),
                 tags: vec!["失败原因".into()],
+                ..Default::default()
             },
         ],
         usage: ApiUsage {

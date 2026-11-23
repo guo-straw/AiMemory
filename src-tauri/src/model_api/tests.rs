@@ -1,4 +1,81 @@
 use super::*;
+
+#[test]
+fn archive_scope_and_relationships_are_validated_before_persistence() {
+    use crate::code_context::CodeRepository;
+    let mut source = turn();
+    source.code_repositories = ["front", "back"]
+        .iter()
+        .map(|id| CodeRepository {
+            id: (*id).into(),
+            name: (*id).into(),
+            remote: format!("https://github.com/test/{id}"),
+            root: format!("/project/{id}"),
+            files: vec![format!("src/{id}.ts")],
+        })
+        .collect();
+    let topics = [ArchiveTopic {
+        id: "manual-back".into(),
+        repository_id: "back".into(),
+        ..Default::default()
+    }];
+    let first = ExtractedMemory {
+        op: Some(ArchiveOp::Create),
+        repository_id: Some("front".into()),
+        code_paths: vec!["src/front.ts".into()],
+        related_ids: vec!["manual-back".into()],
+        related_indices: vec![1],
+        title: "前端状态".into(),
+        kind: "工作记录".into(),
+        summary: "展示状态".into(),
+        evidence: "每两秒查询任务，终态停止。".into(),
+        ..Default::default()
+    };
+    let second = ExtractedMemory {
+        repository_id: Some("back".into()),
+        code_paths: vec!["src/back.ts".into()],
+        related_ids: Vec::new(),
+        related_indices: Vec::new(),
+        ..first.clone()
+    };
+    let valid = vec![first, second];
+    validate_memories(&valid, &source, &topics).unwrap();
+    for (field, expected) in [
+        ("repository", "代码范围以外的仓库"),
+        ("missing", "必须为每条记忆指定"),
+        ("files", "代码范围以外的文件"),
+        ("related", "候选范围"),
+        ("index", "关联下标"),
+        ("update", "只能关联"),
+    ] {
+        let mut invalid = valid.clone();
+        match field {
+            "repository" => invalid[0].repository_id = Some("unknown".into()),
+            "missing" => invalid[0].repository_id = None,
+            "files" => invalid[0].code_paths = vec!["src/back.ts".into()],
+            "related" => invalid[0].related_ids = vec!["unknown".into()],
+            "index" => invalid[0].related_indices = vec![0],
+            "update" => {
+                invalid[0].op = Some(ArchiveOp::Update);
+                invalid[0].target_id = Some("manual-back".into());
+            }
+            _ => unreachable!(),
+        }
+        assert!(validate_memories(&invalid, &source, &topics)
+            .unwrap_err()
+            .contains(expected));
+    }
+    let topics = [ArchiveTopic {
+        can_update: true,
+        ..topics[0].clone()
+    }];
+    let mut cross_update = valid;
+    cross_update[0].op = Some(ArchiveOp::Update);
+    cross_update[0].target_id = Some("manual-back".into());
+    assert!(validate_memories(&cross_update, &source, &topics)
+        .unwrap_err()
+        .contains("跨仓库合并"));
+}
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -109,6 +186,7 @@ fn turn() -> CodexTurn {
         user_text: "每两秒查询任务，终态停止。".into(),
         assistant_text: "页面卸载时清理计时器。".into(),
         session_path: "/sessions/session.jsonl".into(),
+        code_repositories: Vec::new(),
     }
 }
 
@@ -120,6 +198,8 @@ async fn chat_extends_an_existing_topic_and_separates_an_independent_change() {
         id: "ARC-export".into(),
         title: "导出进度".into(),
         summary: "导出状态通过轮询刷新。".into(),
+        can_update: true,
+        ..Default::default()
     }];
     let content = json!({"memories":[
         {"op":"update","target_id":"ARC-export", "title":"导出进度", "kind":"技术决策", "summary":"每两秒轮询进度，终态或卸载时停止", "details":"终态和卸载均清理计时器", "evidence":"每两秒查询任务，终态停止。", "tags":["轮询"]},
@@ -192,6 +272,8 @@ async fn existing_topics_only_allow_one_update_with_evidence_from_this_turn() {
         id: "ARC-export".into(),
         title: "导出进度".into(),
         summary: "改用轮询跟踪导出。".into(),
+        can_update: true,
+        ..Default::default()
     }];
     let memory = json!({"op":"update","target_id":"ARC-export","title":"导出进度","kind":"工作记录",
         "summary":"轮询跟踪导出，终态停止","details":"每两秒查询一次","evidence":"终态停止。"});

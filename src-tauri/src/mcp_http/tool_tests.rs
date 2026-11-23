@@ -364,6 +364,7 @@ async fn http_offline_groups_manual_conclusions_and_paged_source_evidence_share_
                 "## 结论\n\n采用 SSE。\n\n## 原文依据\n\n> 最初采用事件流。\n",
             ),
             &source(1),
+            &[],
         )
         .unwrap();
     let raw = fs::read_to_string(&first.summary.path)
@@ -380,6 +381,7 @@ async fn http_offline_groups_manual_conclusions_and_paged_source_evidence_share_
         details: String::new(),
         evidence: "终态时停止。\n离开页面也停止。".into(),
         tags: Vec::new(),
+        ..Default::default()
     };
     vault
         .extend_archive(&first.summary.id, &repo.id, &change, &source(2), None)
@@ -393,6 +395,7 @@ async fn http_offline_groups_manual_conclusions_and_paged_source_evidence_share_
                     "## 结论\n\n共享决定。\n\n## 原文依据\n\n> 另一轮独立证据。\n",
                 ),
                 &source(n + 10),
+                &[],
             )
             .unwrap();
     }

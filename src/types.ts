@@ -33,6 +33,7 @@ export interface MemoryRecord extends MemorySummary {
   markdown: string;
   relatedIds: string[];
   outgoingRelatedIds: string[];
+  codePaths: string[];
   source: string | null;
   revision: string;
   currentConclusion: string;

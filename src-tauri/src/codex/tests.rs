@@ -2,6 +2,86 @@ use super::*;
 use serde_json::json;
 use std::io::Write;
 
+#[test]
+fn code_paths_route_multiple_repositories_and_turn_cwd_overrides_session_remote() {
+    let directory = fixture();
+    let project = |name: &str, file: &str| {
+        let path = directory.path().join(format!("{name} 代码"));
+        fs::create_dir_all(path.join("src")).unwrap();
+        fs::write(path.join(file), "fixture").unwrap();
+        assert!(crate::git::command()
+            .args(["init", "--quiet"])
+            .arg(&path)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        assert!(crate::git::command()
+            .arg("-C")
+            .arg(&path)
+            .args([
+                "remote",
+                "add",
+                "origin",
+                &format!("https://github.com/test/{name}.git")
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success());
+        path
+    };
+    let frontend = project("frontend", "src/App.vue");
+    let backend = project("backend", "src/status.rs");
+    fs::write(backend.join("Dockerfile"), "FROM scratch\n").unwrap();
+    let path = directory.path().join("rollout-cross-repo.jsonl");
+    let mut identity = meta("cross-repo", "user");
+    identity["payload"]["cwd"] = json!(frontend);
+    identity["payload"]["git"]["repository_url"] = json!("https://github.com/stale/old.git");
+    append(
+        &path,
+        &[
+            identity,
+            started("both"),
+            message("user", None, "前后端共同支持任务状态。"),
+            json!({"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":json!({"workdir":backend,"cmd":"sed -n '1,20p' src/status.rs"}).to_string()}}),
+            json!({"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":format!("await tools.apply_patch(\"*** Begin Patch\\n*** Update File: {}\\n*** End Patch\")",frontend.join("src/App.vue").display())}}),
+            json!({"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":format!("await tools.exec_command({{cmd:\"cat Dockerfile\",workdir:{}}})",serde_json::to_string(&backend).unwrap())}}),
+        ],
+    );
+    let snapshot = snapshot_rollout(&path).unwrap();
+    let snapshot = serde_json::from_str(&serde_json::to_string(&snapshot).unwrap()).unwrap();
+    append(&path, &[completed("both", "2026-11-21T03:01:00Z")]);
+    let batch = read_rollout(&path, &snapshot, ENABLED).unwrap();
+    let turn = &batch.turns[0];
+    assert_eq!(
+        turn.repository_remote.as_deref(),
+        Some("https://github.com/test/frontend.git")
+    );
+    let contexts = turn.repositories();
+    assert_eq!(contexts.len(), 2);
+    let front = contexts.iter().find(|r| r.name == "frontend").unwrap();
+    let back = contexts.iter().find(|r| r.name == "backend").unwrap();
+    assert!(front.files.contains(&"src/App.vue".into()));
+    assert!(!front.files.contains(&"src/status.rs".into()));
+    assert!(back.files.contains(&"src/status.rs".into()));
+    assert!(back.files.contains(&"Dockerfile".into()));
+    append(
+        &path,
+        &[
+            started("moved"),
+            json!({"type":"turn_context","payload":{"turn_id":"moved","cwd":backend}}),
+            message("user", None, "继续后端功能。"),
+            completed("moved", "2026-11-21T03:02:00Z"),
+        ],
+    );
+    let moved = read_rollout(&path, &batch.cursor, ENABLED).unwrap();
+    assert_eq!(
+        moved.turns[0].repository_remote.as_deref(),
+        Some("https://github.com/test/backend.git")
+    );
+}
+
 const ENABLED: &str = "2026-11-21T03:00:00.500Z";
 
 fn fixture() -> tempfile::TempDir {

@@ -84,6 +84,7 @@ async fn archive_acceptance(
             user_text: (*user).into(),
             assistant_text: (*assistant).into(),
             session_path: root.join("turns.jsonl").display().to_string(),
+            code_repositories: Vec::new(),
         };
         pipeline
             .ingest(
@@ -253,6 +254,7 @@ async fn independent_holdout_and_real_archive_actions() {
                         input_truncated: false,
                         message_role: Some("user".into()),
                     },
+                    &[],
                 )
                 .unwrap();
         }

@@ -2,10 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    collections::BTreeSet,
     fs::{self, File},
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    process::Command,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -21,6 +21,31 @@ pub struct CodexTurn {
     pub user_text: String,
     pub assistant_text: String,
     pub session_path: String,
+    #[serde(default)]
+    pub code_repositories: Vec<crate::code_context::CodeRepository>,
+}
+
+impl CodexTurn {
+    pub fn repositories(&self) -> Vec<crate::code_context::CodeRepository> {
+        let mut repositories = self.code_repositories.clone();
+        if let Some(remote) = self
+            .repository_remote
+            .as_deref()
+            .and_then(|remote| crate::storage::normalize_remote(remote).ok())
+        {
+            let id = crate::storage::repository_id(&remote);
+            if !repositories.iter().any(|repository| repository.id == id) {
+                repositories.push(crate::code_context::CodeRepository {
+                    id,
+                    name: self.repository_name.clone(),
+                    remote,
+                    root: self.cwd.clone(),
+                    files: Vec::new(),
+                });
+            }
+        }
+        repositories
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -49,6 +74,8 @@ struct PendingTurn {
     user_messages: Vec<String>,
     user_event_text: Option<String>,
     final_text: Option<String>,
+    #[serde(default)]
+    code_paths: BTreeSet<PathBuf>,
 }
 
 pub struct RolloutBatch {
@@ -232,6 +259,7 @@ fn process_event(
                     user_messages: Vec::new(),
                     user_event_text: None,
                     final_text: None,
+                    code_paths: BTreeSet::new(),
                 });
             }
             "turn_aborted" => {
@@ -251,7 +279,7 @@ fn process_event(
                 if payload["turn_id"].as_str()? != active.id {
                     return None;
                 }
-                let active = cursor.active.take()?;
+                let mut active = cursor.active.take()?;
                 let completed = event_time(event)?;
                 if enabled_at.is_none_or(|start| completed < start) {
                     return None;
@@ -270,7 +298,19 @@ fn process_event(
                 if user_text.trim().is_empty() || assistant_text.trim().is_empty() {
                     return None;
                 }
-                let remote = session.remote.clone().or_else(|| git_remote(&active.cwd));
+                let remote = git_remote(&active.cwd).or_else(|| {
+                    (active.cwd == session.cwd)
+                        .then(|| session.remote.clone())
+                        .flatten()
+                });
+                crate::code_context::collect_paths(&user_text, &active.cwd, &mut active.code_paths);
+                crate::code_context::collect_paths(
+                    &assistant_text,
+                    &active.cwd,
+                    &mut active.code_paths,
+                );
+                let code_repositories =
+                    crate::code_context::resolve_repositories(&active.code_paths);
                 let repository_name = remote
                     .as_deref()
                     .and_then(|remote| remote.trim_end_matches('/').rsplit(['/', ':']).next())
@@ -294,6 +334,7 @@ fn process_event(
                     user_text,
                     assistant_text,
                     session_path: path.display().to_string(),
+                    code_repositories,
                 });
             }
             _ => {}
@@ -306,6 +347,18 @@ fn process_event(
                 }
             }
         }
+    } else if event_type == "response_item"
+        && matches!(
+            payload["type"].as_str(),
+            Some("function_call" | "custom_tool_call")
+        )
+    {
+        let active = cursor.active.as_mut()?;
+        let input = payload["arguments"]
+            .as_str()
+            .or_else(|| payload["input"].as_str())
+            .unwrap_or_default();
+        crate::code_context::collect_tool_paths(input, &active.cwd, &mut active.code_paths);
     } else if event_type == "response_item" && payload["type"].as_str() == Some("message") {
         let active = cursor.active.as_mut()?;
         let text = message_text(payload);
@@ -380,8 +433,8 @@ fn message_text(payload: &Value) -> String {
         .unwrap_or_default()
 }
 
-fn git_remote(cwd: &str) -> Option<String> {
-    let output = Command::new("git")
+pub(crate) fn git_remote(cwd: &str) -> Option<String> {
+    let output = crate::git::command()
         .args(["-C", cwd, "config", "--get", "remote.origin.url"])
         .output()
         .ok()?;

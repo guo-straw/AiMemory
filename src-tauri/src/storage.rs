@@ -72,6 +72,7 @@ pub struct MemoryRecord {
     pub markdown: String,
     pub related_ids: Vec<String>,
     pub outgoing_related_ids: Vec<String>,
+    pub code_paths: Vec<String>,
     pub source: Option<String>,
     pub revision: String,
     pub conclusion_owner: String,
@@ -149,6 +150,9 @@ impl Vault {
             CREATE TABLE IF NOT EXISTS memory_sources (memory_id TEXT NOT NULL, source_id TEXT NOT NULL, session_id TEXT NOT NULL, PRIMARY KEY(memory_id,source_id));",
         )
         .map_err(|e| e.to_string())?;
+        db.execute_batch("CREATE TABLE IF NOT EXISTS memory_code_paths (memory_id TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY(memory_id,path));
+            CREATE INDEX IF NOT EXISTS memory_code_path ON memory_code_paths(path);")
+            .map_err(|e| e.to_string())?;
         let version: i64 = db
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
@@ -191,10 +195,7 @@ impl Vault {
     }
 
     pub fn add_repository(&mut self, input: RepositoryInput) -> Result<Repository, String> {
-        let name = input.name.trim();
-        if name.is_empty() {
-            return Err("请输入仓库名称".into());
-        }
+        let name = repository_name(&input.name)?;
         let remote = normalize_remote(&input.remote)?;
         if let Some(repository) = self.repositories.values().find(|r| r.remote == remote) {
             return Ok(repository.clone());
@@ -210,6 +211,111 @@ impl Vault {
             .insert(repository.id.clone(), repository.clone());
         self.persist_repositories()?;
         Ok(repository)
+    }
+
+    pub fn rename_repository(&mut self, id: &str, name: &str) -> Result<(), String> {
+        let name = repository_name(name)?;
+        let repository = self.repositories.get(id).ok_or("未找到这个仓库")?;
+        if repository.name == name {
+            return Ok(());
+        }
+        for memory in self.search(Some(id), "")? {
+            let path = Path::new(&memory.path);
+            let mut document = parse_document(path)?;
+            set(&mut document.meta, "repository_name", &name)?;
+            self.persist_document(
+                &memory.id,
+                path,
+                &document.meta,
+                &document.markdown,
+                Some(&document.revision),
+                &format!("仓库重命名 · {name}"),
+            )?;
+        }
+        self.repositories.get_mut(id).unwrap().name = name.into();
+        self.persist_repositories()
+    }
+
+    pub fn delete_repository(&mut self, id: &str) -> Result<(), String> {
+        let repository = self.repositories.get(id).ok_or("未找到这个仓库")?;
+        let memories = self.search(Some(id), "")?;
+        let ids: BTreeSet<_> = memories.iter().map(|memory| memory.id.as_str()).collect();
+        let trash = self.root.join(".aimemory/trash").join(format!(
+            "{}-{}",
+            id,
+            uuid::Uuid::new_v4().simple()
+        ));
+        fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
+        write_atomic(
+            &trash.join("repository.json"),
+            &serde_json::to_vec_pretty(repository).map_err(|e| e.to_string())?,
+        )?;
+        let others = self
+            .search(None, "")?
+            .into_iter()
+            .filter(|m| m.repository_id != id)
+            .collect::<Vec<_>>();
+        for memory in &others {
+            let path = Path::new(&memory.path);
+            let mut document = parse_document(path)?;
+            let related = strings(&document.meta, "related_ids")?;
+            let remaining: Vec<_> = related
+                .iter()
+                .filter(|target| !ids.contains(target.as_str()))
+                .collect();
+            if remaining.len() != related.len() {
+                set(&mut document.meta, "related_ids", &remaining)?;
+                self.persist_document(
+                    &memory.id,
+                    path,
+                    &document.meta,
+                    &document.markdown,
+                    Some(&document.revision),
+                    "删除关联仓库 · 移除已删除记忆的关联",
+                )?;
+            }
+        }
+        let mut paths = memories
+            .iter()
+            .map(|memory| PathBuf::from(&memory.path))
+            .collect::<Vec<_>>();
+        let directory = self.root.join(id);
+        if directory.is_dir() {
+            markdown_files(&directory, &mut paths)?;
+        }
+        paths.sort();
+        paths.dedup();
+        let other_paths = others
+            .iter()
+            .map(|memory| Path::new(&memory.path))
+            .collect::<BTreeSet<_>>();
+        for path in paths
+            .iter()
+            .filter(|path| !other_paths.contains(path.as_path()))
+        {
+            let destination = trash
+                .join("memories")
+                .join(path.strip_prefix(&self.root).map_err(|e| e.to_string())?);
+            fs::create_dir_all(destination.parent().unwrap()).map_err(|e| e.to_string())?;
+            fs::rename(path, &destination).map_err(|e| e.to_string())?;
+        }
+        let transaction = self.db.transaction().map_err(|e| e.to_string())?;
+        for memory in &memories {
+            for sql in [
+                "DELETE FROM relations WHERE from_id=?1 OR to_id=?1",
+                "DELETE FROM memory_inputs WHERE memory_id=?1",
+                "DELETE FROM memory_sources WHERE memory_id=?1",
+                "DELETE FROM memory_code_paths WHERE memory_id=?1",
+                "DELETE FROM memories WHERE id=?1",
+            ] {
+                transaction
+                    .execute(sql, [&memory.id])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        transaction.commit().map_err(|e| e.to_string())?;
+        self.repositories.remove(id);
+        self.refresh()
     }
 
     pub fn refresh(&mut self) -> Result<(), String> {
@@ -326,6 +432,9 @@ impl Vault {
                 transaction
                     .execute("DELETE FROM memory_sources WHERE memory_id=?1", [id])
                     .map_err(|e| e.to_string())?;
+                transaction
+                    .execute("DELETE FROM memory_code_paths WHERE memory_id=?1", [id])
+                    .map_err(|e| e.to_string())?;
             }
         }
         for (record, related) in &records {
@@ -336,7 +445,7 @@ impl Vault {
     }
 
     pub fn rebuild(&mut self) -> Result<(), String> {
-        self.db.execute_batch("DELETE FROM relations; DELETE FROM memories; DELETE FROM memory_inputs; DELETE FROM memory_sources;").map_err(|e| e.to_string())?;
+        self.db.execute_batch("DELETE FROM relations; DELETE FROM memories; DELETE FROM memory_inputs; DELETE FROM memory_sources; DELETE FROM memory_code_paths;").map_err(|e| e.to_string())?;
         self.refresh()
     }
 
@@ -445,12 +554,13 @@ impl Vault {
             source: field(&document.meta, "source"),
             related_ids: related,
             outgoing_related_ids: outgoing,
+            code_paths: strings(&document.meta, "code_paths")?,
             revision: document.revision,
         })
     }
 
     pub fn save(&mut self, input: MemoryInput) -> Result<MemoryRecord, String> {
-        self.save_document(input, None, None)
+        self.save_document(input, None, None, None)
     }
 
     pub fn adopt_suggestion(
@@ -497,6 +607,7 @@ impl Vault {
         id: &str,
         input: MemoryInput,
         source: &ArchiveSource,
+        code_paths: &[String],
     ) -> Result<MemoryRecord, String> {
         let exists = self
             .db
@@ -509,7 +620,26 @@ impl Vault {
         if exists {
             return self.read(id);
         }
-        self.save_document(input, Some(id), Some(source))
+        self.save_document(input, Some(id), Some(source), Some(code_paths))
+    }
+
+    pub fn memories_for_code(
+        &self,
+        repository_id: &str,
+        paths: &[String],
+    ) -> Result<Vec<String>, String> {
+        let mut statement = self.db.prepare("SELECT DISTINCT m.id FROM memories m JOIN memory_code_paths p ON p.memory_id=m.id WHERE m.repository_id=?1 AND p.path IN (SELECT value FROM json_each(?2)) ORDER BY m.id").map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map(
+                params![
+                    repository_id,
+                    serde_json::to_string(paths).map_err(|e| e.to_string())?
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
     }
 
     pub fn extend_archive(
@@ -611,6 +741,16 @@ impl Vault {
             }
         }
         followups.push(source.clone());
+        let mut code_paths = strings(&document.meta, "code_paths")?;
+        code_paths.extend(memory.code_paths.iter().cloned());
+        code_paths.sort();
+        code_paths.dedup();
+        let mut related = strings(&document.meta, "related_ids")?;
+        related.extend(memory.related_ids.iter().cloned());
+        related.sort();
+        related.dedup();
+        set(&mut document.meta, "code_paths", &code_paths)?;
+        set(&mut document.meta, "related_ids", &related)?;
         set(&mut document.meta, "codex_followups", &followups)?;
         set(&mut document.meta, "tags", &tags)?;
         set(&mut document.meta, "conclusion_owner", &owner)?;
@@ -642,6 +782,7 @@ impl Vault {
         input: MemoryInput,
         archive_id: Option<&str>,
         source: Option<&ArchiveSource>,
+        code_paths: Option<&[String]>,
     ) -> Result<MemoryRecord, String> {
         validate_memory(&input)?;
         let mut body = input.markdown.clone();
@@ -731,6 +872,9 @@ impl Vault {
         set(&mut meta, "related_ids", &input.related_ids)?;
         set(&mut meta, "source", &input.source)?;
         set(&mut meta, "updated_at", &now)?;
+        if let Some(code_paths) = code_paths {
+            set(&mut meta, "code_paths", &code_paths)?;
+        }
         if let Some(source) = source {
             set(&mut meta, "codex_source_id", &source.source_id)?;
             set(&mut meta, "codex_session_id", &source.session_id)?;
@@ -879,6 +1023,7 @@ impl Vault {
             markdown: document.markdown,
             related_ids: related.clone(),
             outgoing_related_ids: related.clone(),
+            code_paths: strings(&document.meta, "code_paths")?,
             source: field(&document.meta, "source"),
             revision: document.revision,
         };
@@ -890,6 +1035,14 @@ impl Vault {
             .map_err(|e| e.to_string())?;
         write_atomic(&self.root.join(".aimemory/repositories.json"), &json)
     }
+}
+
+fn repository_name(name: &str) -> Result<&str, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("请输入仓库名称".into());
+    }
+    Ok(name)
 }
 
 pub(crate) struct KeywordQuery {
@@ -999,6 +1152,17 @@ fn index_record(
             .execute(
                 "INSERT OR IGNORE INTO relations VALUES(?1,?2)",
                 params![s.id, target],
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    transaction
+        .execute("DELETE FROM memory_code_paths WHERE memory_id=?1", [&s.id])
+        .map_err(|e| e.to_string())?;
+    for path in &record.code_paths {
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO memory_code_paths VALUES(?1,?2)",
+                params![s.id, path],
             )
             .map_err(|e| e.to_string())?;
     }

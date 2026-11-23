@@ -59,16 +59,20 @@ async fn real_chat_extraction() {
         turn_id: "chat-400".into(),
         completed_at: "2026-11-21T00:00:00Z".into(),
         cwd: "/example/frontend-web".into(),
-        repository_remote: None,
+        repository_remote: Some("https://github.com/aimemory-test/frontend-web".into()),
         repository_name: "frontend-web".into(),
         user_text: "技术决定：导出进度每两秒轮询一次，任务进入终态后停止。".into(),
         assistant_text: "已确认，离开导出页时清理轮询计时器。".into(),
         session_path: "/example/session.jsonl".into(),
+        code_repositories: Vec::new(),
     };
     let topics = [model_api::ArchiveTopic {
         id: "ARC-export".into(),
         title: "导出进度".into(),
         summary: "导出页需要展示后台导出任务的进度。".into(),
+        repository_id: turn.repositories()[0].id.clone(),
+        can_update: true,
+        ..Default::default()
     }];
     let result = model_api::chat_extract(&service, &turn, &topics).await;
     let report = match &result {

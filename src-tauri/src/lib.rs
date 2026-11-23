@@ -1,6 +1,8 @@
 mod archive;
+pub mod code_context;
 pub mod codex;
 pub mod config;
+mod git;
 #[cfg(test)]
 mod integration_tests;
 pub mod mcp;
@@ -125,6 +127,36 @@ async fn repository_add(
         .as_mut()
         .ok_or("请先打开记忆库")?
         .add_repository(input)
+}
+
+#[tauri::command]
+async fn repository_rename(
+    id: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<Workspace, String> {
+    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+    let vault = vault.as_mut().ok_or("请先打开记忆库")?;
+    vault.rename_repository(&id, &name)?;
+    vault.workspace()
+}
+
+#[tauri::command]
+async fn repository_delete(id: String, state: State<'_, AppState>) -> Result<Workspace, String> {
+    let _transition = state.workspace_transition.write().await;
+    let mut vault = state.vault.lock().map_err(|e| e.to_string())?;
+    let vault = vault.as_mut().ok_or("请先打开记忆库")?;
+    let pipeline = state.pipeline.lock().map_err(|e| e.to_string())?;
+    if let Some(pipeline) = pipeline.as_ref() {
+        if pipeline.has_in_flight_requests()? {
+            return Err("后台归档请求正在完成，请稍后再删除仓库".into());
+        }
+    }
+    vault.delete_repository(&id)?;
+    if let Some(pipeline) = pipeline.as_ref() {
+        pipeline.remove_deleted_memories(&id)?;
+    }
+    vault.workspace()
 }
 
 #[tauri::command]
@@ -660,8 +692,7 @@ pub fn run() {
                 transfers: Mutex::new(transfer::TransferState::default()),
                 workspace_transition: tokio::sync::RwLock::new(()),
             });
-            let open =
-                tauri::menu::MenuItem::with_id(app, "open", "打开知迹", true, None::<&str>)?;
+            let open = tauri::menu::MenuItem::with_id(app, "open", "打开知迹", true, None::<&str>)?;
             let quit = tauri::menu::MenuItem::with_id(app, "quit", "完全退出", true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(app, &[&open, &quit])?;
             tauri::tray::TrayIconBuilder::new()
@@ -690,6 +721,8 @@ pub fn run() {
             workspace_migrate,
             workspace_refresh,
             repository_add,
+            repository_rename,
+            repository_delete,
             memory_search,
             memory_graph,
             semantic_search,

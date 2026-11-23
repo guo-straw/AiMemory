@@ -81,6 +81,7 @@ fn turn() -> CodexTurn {
         user_text: "迁移时保留记忆及归档进度。".into(),
         assistant_text: "保留已就绪向量和已使用的 token。".into(),
         session_path: "/example/codex/sessions/rollout-migration.jsonl".into(),
+        code_repositories: Vec::new(),
     }
 }
 
@@ -95,6 +96,7 @@ fn extraction() -> ChatExtraction {
             details: "保留向量、查询缓存和关联。".into(),
             evidence: "迁移时保留记忆及归档进度。".into(),
             tags: vec!["迁移".into()],
+            ..Default::default()
         }],
         usage: ApiUsage {
             input_tokens: 17,

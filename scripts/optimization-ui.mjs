@@ -15,7 +15,21 @@ window.__TAURI_INTERNALS__ = {
   unregisterCallback: () => {},
   invoke: async (command, args = {}) => {
     if (command.startsWith('plugin:event|')) return 1;
-    if (command === 'workspace_open' || command === 'workspace_refresh') return fixture.workspace;
+    if (command === 'workspace_open' || command === 'workspace_refresh') return structuredClone(fixture.workspace);
+    if (command === 'repository_rename') {
+      fixture.workspace.repositories = fixture.workspace.repositories.map(repository => repository.id === args.id ? { ...repository, name: args.name.trim() } : repository);
+      return structuredClone(fixture.workspace);
+    }
+    if (command === 'repository_delete') {
+      const removed = new Set(fixture.memories.filter(memory => memory.repositoryId === args.id).map(memory => memory.id));
+      fixture.workspace.repositories = fixture.workspace.repositories.filter(repository => repository.id !== args.id);
+      fixture.memories = fixture.memories.filter(memory => !removed.has(memory.id));
+      for (const record of Object.values(fixture.records)) {
+        record.relatedIds = record.relatedIds.filter(id => !removed.has(id));
+        record.outgoingRelatedIds = record.outgoingRelatedIds.filter(id => !removed.has(id));
+      }
+      return structuredClone(fixture.workspace);
+    }
     if (command === 'theme_get') return { preset:'ChatGPT',accent:'#3566F0',background:'#FFFFFF',foreground:'#1A1C1F',font:'system' };
     if (command === 'settings_get') return { chat:{baseUrl:'https://api.openai.com/v1',model:'gpt-6.1-sol',hasApiKey:false},embedding:{baseUrl:'https://api.openai.com/v1',model:'text-embedding-3-small',hasApiKey:false},codexDirectory:'/fixtures/sessions',archiveEnabled:false,archiveStartedAt:null,runInBackground:false };
     if (command === 'archive_status') return {enabled:false,startedAt:null,scanning:false,processedTurns:0,writtenMemories:0,memoryWrites:0,pendingEmbeddings:0,failedEmbeddings:0,failedEmbeddingDetails:[],processingEmbeddings:0,recentTurns:[],chatInputTokens:0,chatOutputTokens:0,embeddingInputTokens:0,usageIncomplete:false,lastError:null};

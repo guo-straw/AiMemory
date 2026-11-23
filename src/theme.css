@@ -12,6 +12,8 @@ html[data-theme] .button, html[data-theme] .related-link, html[data-theme] .moda
 html[data-theme] .button:hover { background: var(--surface); border-color: var(--accent-line); }
 html[data-theme] .button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 html[data-theme] .button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+html[data-theme] .button.danger-button { color: var(--danger); border-color: var(--danger-line); }
+html[data-theme] .button.danger-button:hover { background: var(--danger-soft); border-color: var(--danger); }
 html[data-theme] .memory-result.selected, html[data-theme] .related-link:hover { background: var(--soft); border-color: var(--accent-line); }
 html[data-theme] .memory-result.selected h2 { color: var(--accent-text); }
 html[data-theme] .list-empty h2, html[data-theme] .archive-log-empty h3,

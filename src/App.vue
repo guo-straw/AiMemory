@@ -3,9 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { UnlistenFn } from '@tauri-apps/api/event';
-import { Activity, ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock3, Database, FileText, FolderOpen, GitBranch, History, Link2, Orbit, PanelLeft, Plus, RefreshCw, Search, Settings2, SquarePen, X } from 'lucide-vue-next';
-import { archiveRetry, archiveStatus, chooseWorkspace, memoryGraph, memoryRead, memorySave, memoryAdoptSuggestion, memorySearch, openMemoryFile, repositoryAdd, semanticSearch, settingsGet, settingsSave, workspaceMigrate, workspaceOpen, workspaceRefresh } from './api';
-import type { AppSettings, ArchiveStatus, MemoryGraph, MemoryInput, MemoryRecord, MemorySummary, SearchHit, SearchResponse, SettingsInput, Workspace } from './types';
+import { Activity, ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock3, Database, FileText, FolderOpen, GitBranch, History, Link2, Orbit, PanelLeft, Plus, RefreshCw, Search, Settings2, SquarePen, Trash2, X } from 'lucide-vue-next';
+import { archiveRetry, archiveStatus, chooseWorkspace, memoryGraph, memoryRead, memorySave, memoryAdoptSuggestion, memorySearch, openMemoryFile, repositoryAdd, repositoryDelete, repositoryRename, semanticSearch, settingsGet, settingsSave, workspaceMigrate, workspaceOpen, workspaceRefresh } from './api';
+import type { AppSettings, ArchiveStatus, MemoryGraph, MemoryInput, MemoryRecord, MemorySummary, Repository, SearchHit, SearchResponse, SettingsInput, Workspace } from './types';
 import MarkdownView from './components/MarkdownView.vue';
 import MemoryEditor from './components/MemoryEditor.vue';
 import MemoryProvenance from './components/MemoryProvenance.vue';
@@ -80,6 +80,13 @@ const repositoryName = ref('');
 const repositoryRemote = ref('');
 const repositoryError = ref('');
 const addingRepository = ref(false);
+const repositoryMenu = ref<{ repository: Repository; x: number; y: number } | null>(null);
+const repositoryAction = ref<{ kind: 'rename' | 'delete'; repository: Repository } | null>(null);
+const actionName = ref('');
+const actionError = ref('');
+const savingRepository = ref(false);
+const repositoryMenuElement = ref<HTMLElement>();
+const repositoryActionInput = ref<HTMLInputElement>();
 let searchVersion = 0;
 let readVersion = 0;
 let searchTimer: ReturnType<typeof setTimeout>;
@@ -115,7 +122,7 @@ function notify(message: string) {
 }
 
 function navigate(action: () => void) {
-  if (transferPanel.value?.busy || changingWorkspace.value) return;
+  if (transferPanel.value?.busy || changingWorkspace.value || savingRepository.value) return;
   if (view.value === 'editor' && editor.value?.dirty || view.value === 'settings' && settingsPanel.value?.dirty) {
     pendingNavigation.value = action;
     return;
@@ -585,6 +592,76 @@ async function addRepository() {
   }
 }
 
+async function openRepositoryMenu(event: MouseEvent | KeyboardEvent, repository: Repository) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const x = 'clientX' in event ? event.clientX : rect.left + 20;
+  const y = 'clientY' in event ? event.clientY : rect.bottom;
+  repositoryMenu.value = { repository, x, y };
+  await nextTick();
+  const menu = repositoryMenuElement.value;
+  if (menu && repositoryMenu.value) {
+    repositoryMenu.value.x = Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8));
+    repositoryMenu.value.y = Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8));
+    menu.querySelector<HTMLButtonElement>('button')?.focus();
+  }
+}
+
+function moveRepositoryMenuFocus(event: KeyboardEvent) {
+  const buttons = Array.from(repositoryMenuElement.value?.querySelectorAll('button') ?? []);
+  const current = buttons.indexOf(event.target as HTMLButtonElement);
+  buttons[(current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+}
+
+function closeRepositoryMenu() {
+  repositoryMenu.value = null;
+}
+
+function startRepositoryAction(kind: 'rename' | 'delete') {
+  const repository = repositoryMenu.value?.repository;
+  closeRepositoryMenu();
+  if (!repository) return;
+  navigate(() => {
+    repositoryAction.value = { kind, repository };
+    actionName.value = repository.name;
+    actionError.value = '';
+    void nextTick(() => { repositoryActionInput.value?.focus(); repositoryActionInput.value?.select(); });
+  });
+}
+
+async function saveRepositoryAction() {
+  const action = repositoryAction.value;
+  if (!action) return;
+  savingRepository.value = true;
+  actionError.value = '';
+  try {
+    workspace.value = action.kind === 'rename'
+      ? await repositoryRename(action.repository.id, actionName.value)
+      : await repositoryDelete(action.repository.id);
+    if (action.kind === 'delete') {
+      if (activeRepositoryId.value === action.repository.id) activeRepositoryId.value = null;
+      if (selectedMemory.value?.repositoryId === action.repository.id) {
+        readVersion++;
+        reading.value = false;
+        selectedMemory.value = null;
+        graphReaderActive.value = false;
+        narrowReader.value = false;
+      }
+      relatedHistory.value = [];
+      if (graphFocusId.value && allMemories.value.some(m => m.id === graphFocusId.value && m.repositoryId === action.repository.id)) graphFocusId.value = null;
+    }
+    allMemories.value = await memorySearch(null, '');
+    await invalidateGraph();
+    await searchMemories();
+    if (selectedMemory.value) await readMemory(selectedMemory.value.id, false);
+    repositoryAction.value = null;
+    notify(action.kind === 'rename' ? '仓库已重命名' : '仓库已删除，记忆已移入本地回收目录');
+  } catch (cause) {
+    actionError.value = String(cause);
+  } finally {
+    savingRepository.value = false;
+  }
+}
+
 async function openOriginal() {
   if (!selectedMemory.value) return;
   try { await openMemoryFile(selectedMemory.value.id); }
@@ -598,6 +675,10 @@ function formatDate(value: string) {
 }
 
 function keydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeRepositoryMenu();
+    if (!savingRepository.value) repositoryAction.value = null;
+  }
   if (!(event.metaKey || event.ctrlKey)) return;
   if (event.key.toLowerCase() === 'k') {
     event.preventDefault();
@@ -626,13 +707,16 @@ watch([activeRepositoryId, query, searchMode], () => {
 
 onMounted(async () => {
   document.addEventListener('keydown', keydown);
+  document.addEventListener('pointerdown', closeRepositoryMenu);
+  window.addEventListener('resize', closeRepositoryMenu);
+  document.addEventListener('scroll', closeRepositoryMenu, true);
   if (canUseNative) {
     unlistenClose = await getCurrentWindow().onCloseRequested(event => {
       if (discardOnClose) return;
       const dirty = view.value === 'editor' && editor.value?.dirty || view.value === 'settings' && settingsPanel.value?.dirty;
-      if (!dirty && !saving.value && !savingSettings.value && !savingTheme.value && !changingWorkspace.value && !transferPanel.value?.busy && !appSettings.value?.runInBackground) return;
+      if (!dirty && !saving.value && !savingSettings.value && !savingTheme.value && !savingRepository.value && !changingWorkspace.value && !transferPanel.value?.busy && !appSettings.value?.runInBackground) return;
       event.preventDefault();
-      if (saving.value || savingSettings.value || savingTheme.value || changingWorkspace.value || transferPanel.value?.busy) return;
+      if (saving.value || savingSettings.value || savingTheme.value || savingRepository.value || changingWorkspace.value || transferPanel.value?.busy) return;
       const closeWindow = () => {
         if (appSettings.value?.runInBackground) {
           view.value = 'workbench';
@@ -663,6 +747,9 @@ onBeforeUnmount(() => {
   clearTimeout(statusTimer);
   clearInterval(archiveTimer);
   document.removeEventListener('keydown', keydown);
+  document.removeEventListener('pointerdown', closeRepositoryMenu);
+  window.removeEventListener('resize', closeRepositoryMenu);
+  document.removeEventListener('scroll', closeRepositoryMenu, true);
   unlistenClose?.();
 });
 </script>
@@ -699,7 +786,7 @@ onBeforeUnmount(() => {
         <button :class="{ active: activeRepositoryId === null }" @click="showWorkbench(null)">
           <Database :size="14" />所有仓库<span>{{ totalMemories }}</span>
         </button>
-        <button v-for="(repo, index) in repositories" :key="repo.id" :class="{ active: activeRepositoryId === repo.id }" :title="repo.remote" :data-repository-id="repo.id" @click="showWorkbench(repo.id)">
+        <button v-for="(repo, index) in repositories" :key="repo.id" :class="{ active: activeRepositoryId === repo.id }" :title="repo.remote" :data-repository-id="repo.id" aria-haspopup="menu" @click="showWorkbench(repo.id)" @contextmenu.prevent="openRepositoryMenu($event, repo)" @keydown.shift.f10.prevent="openRepositoryMenu($event, repo)">
           <i class="repo-dot" :style="{ background: index < 3 ? `var(--repo-${['a', 'b', 'c'][index]}, ${REPOSITORY_COLORS[index]})` : REPOSITORY_COLORS[index % REPOSITORY_COLORS.length] }" />
           <span class="repo-name">{{ repo.name }}</span>
           <ChevronRight v-if="activeRepositoryId === repo.id" :size="14" />
@@ -930,7 +1017,7 @@ onBeforeUnmount(() => {
       </div>
       <MemoryEditor v-else-if="view === 'editor'" :key="editorKey" ref="editor" :memory="editingMemory" :repositories="repositories" :active-repository-id="activeRepositoryId" :all-memories="allMemories" :saving="saving" @save="saveMemory" @cancel="showWorkbench()" />
       <ArchivePanel v-else-if="view === 'archive'" :status="archive" :memories="allMemories" :read-error="archiveReadError" :retrying="retryingArchive" @retry="retryArchive" @open-memory="id => navigate(() => { view = 'workbench'; selectMemory(id); })" @settings="navigate(() => { view = 'settings'; })" />
-      <SettingsPanel v-else-if="view === 'settings'" ref="settingsPanel" :settings="appSettings" :workspace="workspace" :saving="savingSettings" :loading="loading" :transferring="transferPanel?.busy" @save="saveAppSettings" @choose-workspace="selectDirectory" @open-workspace="openDirectory" @refresh="refreshWorkspace" @add-repository="navigate(() => { repositoryDialog = true; })">
+      <SettingsPanel v-else-if="view === 'settings'" ref="settingsPanel" :settings="appSettings" :workspace="workspace" :saving="savingSettings" :loading="loading" :transferring="transferPanel?.busy" @save="saveAppSettings" @choose-workspace="selectDirectory" @open-workspace="openDirectory" @refresh="refreshWorkspace" @add-repository="navigate(() => { repositoryDialog = true; })" @repository-menu="openRepositoryMenu">
         <template #theme="{ back }"><ThemePanel embedded :theme="theme" :saving="savingTheme" @change="changeTheme" @back="back" /></template>
         <template #transfer="{ back }">
           <TransferPanel v-if="!savingTheme" ref="transferPanel" embedded :workspace="workspace" :settings="appSettings" :theme="theme" @imported="importedTransfer" @back="back" />
@@ -947,6 +1034,19 @@ onBeforeUnmount(() => {
     <div v-if="status" class="toast" role="status">
       <Check :size="16" />{{ status }}</div>
     <MemoryUpdateLog v-if="updateLogOpen && selectedMemory" :memory="selectedMemory" @close="updateLogOpen = false" />
+    <div v-if="repositoryMenu" ref="repositoryMenuElement" class="repository-menu" role="menu" aria-label="仓库操作" :style="{ left: `${repositoryMenu.x}px`, top: `${repositoryMenu.y}px` }" @pointerdown.stop @contextmenu.prevent @keydown.down.prevent="moveRepositoryMenuFocus" @keydown.up.prevent="moveRepositoryMenuFocus">
+      <button role="menuitem" @click="startRepositoryAction('rename')"><SquarePen :size="15" />重命名</button>
+      <button role="menuitem" class="danger-text" @click="startRepositoryAction('delete')"><Trash2 :size="15" />删除仓库</button>
+    </div>
+    <div v-if="repositoryAction" class="modal-backdrop">
+      <form class="modal" :role="repositoryAction.kind === 'delete' ? 'alertdialog' : 'dialog'" aria-modal="true" aria-labelledby="repository-action-title" @submit.prevent="saveRepositoryAction">
+        <div class="modal-heading"><h2 id="repository-action-title">{{ repositoryAction.kind === 'rename' ? '重命名仓库' : '删除仓库' }}</h2><button type="button" class="icon-button" aria-label="关闭仓库操作" :disabled="savingRepository" @click="repositoryAction = null"><X :size="18" /></button></div>
+        <label v-if="repositoryAction.kind === 'rename'" class="field">仓库名称<input ref="repositoryActionInput" v-model="actionName" required :disabled="savingRepository" /></label>
+        <template v-else><p>删除「{{ repositoryAction.repository.name }}」及其 {{ repositoryAction.repository.memoryCount }} 条记忆？相关记忆的关联也会移除。</p><p>记忆文件将移入本地记忆库的 .aimemory/trash 目录。原始 Git 项目不受影响；后续新归档仍可重新接入此仓库。</p></template>
+        <p v-if="actionError" class="inline-error" role="alert">{{ actionError }}</p>
+        <footer><button type="button" class="button" :disabled="savingRepository" @click="repositoryAction = null">取消</button><button class="button" :class="repositoryAction.kind === 'delete' ? 'danger-button' : 'primary'" :disabled="savingRepository">{{ savingRepository ? '正在处理…' : repositoryAction.kind === 'rename' ? '保存名称' : '删除仓库' }}</button></footer>
+      </form>
+    </div>
     <div v-if="pendingNavigation" class="modal-backdrop">
       <section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="discard-title">
         <h2 id="discard-title">有未保存的更改</h2>

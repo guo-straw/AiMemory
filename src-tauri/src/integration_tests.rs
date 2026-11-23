@@ -322,6 +322,7 @@ async fn archive_groups_follow_ups_and_reuses_topics_only_in_the_same_repository
             .as_array()
             .unwrap()
             .iter()
+            .filter(|t| t["can_update"].as_bool() == Some(true))
             .map(|t| t["id"].as_str().unwrap())
             .collect();
         ids.sort_unstable();

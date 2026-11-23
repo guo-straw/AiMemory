@@ -20,6 +20,14 @@ export function repositoryAdd(input: RepositoryInput): Promise<Repository> {
   return invoke('repository_add', { input });
 }
 
+export function repositoryRename(id: string, name: string): Promise<Workspace> {
+  return invoke('repository_rename', { id, name });
+}
+
+export function repositoryDelete(id: string): Promise<Workspace> {
+  return invoke('repository_delete', { id });
+}
+
 export function memorySearch(repositoryId: string | null, query: string): Promise<MemorySummary[]> {
   return invoke('memory_search', { repositoryId, query });
 }

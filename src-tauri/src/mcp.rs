@@ -22,7 +22,6 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::{Arc, Mutex},
 };
 
@@ -72,6 +71,7 @@ pub struct ReadMemoryResult {
     pub section: Option<String>,
     pub markdown: String,
     pub related_ids: Vec<String>,
+    pub code_paths: Vec<String>,
     pub conclusion_source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<EvidenceSource>,
@@ -293,6 +293,7 @@ pub fn read_memory(vault: &Vault, request: ReadMemoryRequest) -> Result<ReadMemo
         section,
         markdown,
         related_ids: record.related_ids,
+        code_paths: record.code_paths,
         sections: ranges.into_iter().map(|section| section.info).collect(),
     })
 }
@@ -472,7 +473,7 @@ pub fn resolve_repository<'a>(
             _ => Err(format!("仓库“{selector}”有多个匹配，请使用稳定仓库 ID")),
         };
     }
-    let output = Command::new("git")
+    let output = crate::git::command()
         .arg("-C")
         .arg(cwd)
         .args(["config", "--get", "remote.origin.url"])

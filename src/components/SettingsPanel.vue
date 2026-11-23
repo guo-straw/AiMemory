@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { Archive, Check, Clock3, FolderOpen, GitBranch, Plus, RefreshCw } from 'lucide-vue-next';
 import { chooseCodexDirectory } from '../api';
 import { createServiceDraft, serviceInput } from '../model-services';
-import type { AppSettings, SettingsInput, Workspace } from '../types';
+import type { AppSettings, Repository, SettingsInput, Workspace } from '../types';
 import AppUpdate from './AppUpdate.vue';
 import ModelService from './ModelService.vue';
 import McpConnection from './McpConnection.vue';
@@ -22,6 +22,7 @@ const emit = defineEmits<{
   openWorkspace: [];
   refresh: [];
   addRepository: [];
+  repositoryMenu: [event: MouseEvent, repository: Repository];
 }>();
 const tab = ref('models');
 const tabs = [
@@ -118,7 +119,7 @@ defineExpose({ dirty, submit, reset });
           <button type="button" class="text-button" :disabled="loading || saving" data-testid="open-workspace" @click="emit('openWorkspace')">打开已有记忆库</button>
         </div>
         <div class="repository-heading"><h2>Git 仓库</h2><button type="button" class="text-button" :disabled="loading || saving" @click="emit('addRepository')"><Plus :size="15" />接入仓库</button></div>
-        <div v-for="repo in workspace.repositories" :key="repo.id" class="repository-setting">
+        <div v-for="repo in workspace.repositories" :key="repo.id" class="repository-setting" @contextmenu.prevent="emit('repositoryMenu', $event, repo)">
           <GitBranch :size="16" /><div><h3>{{ repo.name }}</h3><p>{{ repo.remote }}</p></div><span>{{ repo.memoryCount }} 条记忆</span>
         </div>
         <p v-if="!workspace.repositories.length" class="settings-empty">暂无接入的仓库</p>

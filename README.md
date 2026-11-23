@@ -4,15 +4,15 @@
 
 知迹是一款 macOS 和 Windows 桌面应用，帮你找回代码背后的决定。它把 Codex 对话中的结论和原文依据保存为本地 Markdown，按 Git 仓库整理。换一个会话，编码助手也能通过模型上下文协议（MCP）查到这项决定，以及当时为什么这样做。
 
-**v0.2.3** 是 AiMemory 更名为知迹后的首个版本。升级会沿用原来的记忆库、模型配置和归档进度。[查看发布说明](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.3)
+**v0.2.4** 新增仓库右键重命名与删除，改进代码归属及记忆关联，并将 Windows 后台 Git 调用改为无窗口启动。升级会沿用原来的记忆库、模型配置和归档进度。[查看发布说明](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.4)
 
-## 下载 v0.2.3
+## 下载 v0.2.4
 
 | 平台 | 安装包 |
 | --- | --- |
-| macOS · Apple 芯片（M 系列） | [下载 ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.3/KnowTrace_0.2.3_aarch64.dmg) |
-| macOS · Intel | [下载 x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.3/KnowTrace_0.2.3_x64.dmg) |
-| Windows · x64 | [下载安装程序](https://github.com/guo-straw/AiMemory/releases/download/v0.2.3/KnowTrace_0.2.3_x64-setup.exe) |
+| macOS · Apple 芯片（M 系列） | [下载 ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.4/KnowTrace_0.2.4_aarch64.dmg) |
+| macOS · Intel | [下载 x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.4/KnowTrace_0.2.4_x64.dmg) |
+| Windows · x64 | [下载安装程序](https://github.com/guo-straw/AiMemory/releases/download/v0.2.4/KnowTrace_0.2.4_x64-setup.exe) |
 
 macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序未签名。
 
@@ -23,7 +23,8 @@ macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序�
 - **按事项归档。** 开启自动归档后，知迹从已完成的 Codex 对话中提取有原文依据的决定。同一事项的后续进展会写回原记忆，多轮证据可以一起查阅。
 - **保留人工修订。** 你改过的结论会继续用于展示和检索。后续归档可以补充依据，新的表述由你决定是否采用。
 - **先读摘要，再看依据。** 桌面端和 MCP 共用检索逻辑。查询默认返回最多五条摘要，可继续读指定章节或单轮引文。向量不可用时，仍可用本地关键词或完整 ID 查找。
-- **沿关联阅读。** 在记忆星图中选择一项决定，可以查看与它相关的其他记忆，包括跨仓库的关联。
+- **按代码归档和关联。** 同一轮涉及多个 Git 仓库时，前端、后端的记忆分别归入对应仓库。同一 Git 仓库中的代码仍归在一起；同文件的独立修改、功能依赖和跨仓库协作可以互相关联，在详情和记忆星图中沿关联阅读。
+- **管理仓库。** 右键侧栏或设置页中的仓库可重命名或删除。删除会移除关联，并将记忆文件放入记忆库的 `.aimemory/trash` 本地回收目录，不改动原始 Git 项目。后续新归档仍可重新接入该仓库。
 
 <details>
 <summary>查看记忆写入与更新流程图</summary>
@@ -58,7 +59,7 @@ macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序�
 
 ## 数据和模型服务
 
-手动编辑、关键词检索、正文阅读和星图浏览都可离线使用。自动归档会将本轮用户消息、助手最终答复及候选事项摘要发给你配置的聊天服务。生成记忆向量时，向量服务接收标题、当前结论和标签。语义查询优先复用已缓存的查询向量，需要生成新向量时才会发送查询词。
+手动编辑、关键词检索、正文阅读和星图浏览都可离线使用。自动归档会将本轮用户消息、助手最终答复、涉及的 Git 仓库与文件路径，以及候选事项摘要发给你配置的聊天服务。生成记忆向量时，向量服务接收标题、当前结论和标签。语义查询优先复用已缓存的查询向量，需要生成新向量时才会发送查询词。
 
 ## 从源码运行
 

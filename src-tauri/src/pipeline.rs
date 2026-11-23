@@ -1,10 +1,7 @@
 use crate::{
     codex::{CodexTurn, RolloutCursor},
     model_api::{ArchiveTopic, ChatExtraction, EmbeddingResult},
-    storage::{
-        normalize_remote, repository_id, ArchiveSource, KeywordQuery, MemoryInput, MemorySummary,
-        RepositoryInput, Vault,
-    },
+    storage::{ArchiveSource, KeywordQuery, MemoryInput, MemorySummary, RepositoryInput, Vault},
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -198,7 +195,7 @@ impl Pipeline {
     ) -> Result<(), String> {
         let transaction = self.db.transaction().map_err(|e| e.to_string())?;
         for turn in turns {
-            let (status, error) = if turn.repository_remote.is_none() {
+            let (status, error) = if turn.repositories().is_empty() {
                 ("skipped", Some("该轮工作目录没有 Git 远程仓库"))
             } else {
                 ("pending", None)
@@ -216,60 +213,91 @@ impl Pipeline {
     }
 
     pub fn archive_topics(&self, turn: &CodexTurn) -> Result<Vec<ArchiveTopic>, String> {
-        let remote = turn
-            .repository_remote
-            .as_deref()
-            .ok_or("该轮缺少 Git 远程仓库")?;
-        let repository = repository_id(&normalize_remote(remote)?);
+        let repositories = turn.repositories();
+        let text = format!(
+            "{} {} {}",
+            turn.user_text,
+            turn.assistant_text,
+            repositories
+                .iter()
+                .flat_map(|repository| &repository.files)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        let keywords = KeywordQuery::new(&text);
         let mut statement = self.db.prepare(
-            "SELECT m.id, m.title, m.summary, m.tags, m.markdown,
-                    EXISTS(SELECT 1 FROM memory_index.memory_sources s WHERE s.memory_id=m.id AND s.session_id=?2)
-             FROM memory_index.memories m
-             WHERE m.repository_id=?1 AND EXISTS(SELECT 1 FROM memory_index.memory_sources s WHERE s.memory_id=m.id)
-             ORDER BY (instr(lower(?3), lower(m.title)) > 0) DESC,
-                      EXISTS(SELECT 1 FROM json_each(m.tags) tag WHERE length(tag.value)>1 AND instr(lower(?3),lower(tag.value))>0) DESC,
-                      6 DESC,m.updated_at DESC,m.id"
+            "SELECT m.id,m.title,m.summary,m.tags,m.markdown,m.repository_id,
+                    (SELECT json_group_array(path) FROM memory_index.memory_code_paths p WHERE p.memory_id=m.id),
+                    EXISTS(SELECT 1 FROM memory_index.memory_sources s WHERE s.memory_id=m.id),
+                    EXISTS(SELECT 1 FROM memory_index.memory_sources s WHERE s.memory_id=m.id AND s.session_id=?1)
+             FROM memory_index.memories m ORDER BY m.updated_at DESC,m.id"
         ).map_err(|e| e.to_string())?;
-        let keywords = KeywordQuery::new(&turn.user_text);
         let rows = statement
-            .query_map(
-                params![repository, turn.session_id, turn.user_text],
-                |row| {
-                    let topic = ArchiveTopic {
-                        id: row.get(0)?,
-                        title: row.get(1)?,
-                        summary: row.get(2)?,
-                    };
-                    let text = format!(
-                        "{} {} {}",
-                        topic.summary,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, String>(4)?
-                    )
-                    .to_lowercase();
-                    let score = keywords.score(&topic.title.to_lowercase(), &text);
-                    Ok((topic, score))
-                },
-            )
+            .query_map([&turn.session_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, bool>(7)?,
+                    row.get::<_, bool>(8)?,
+                ))
+            })
             .map_err(|e| e.to_string())?;
-        let rows = rows
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        let mut lexical = rows
+        let mut candidates = Vec::new();
+        for row in rows {
+            let (id, title, summary, tags, markdown, repository_id, paths, archived, same_session) =
+                row.map_err(|e| e.to_string())?;
+            let code_paths: Vec<String> =
+                serde_json::from_str(&paths).map_err(|e| e.to_string())?;
+            let repository = repositories
+                .iter()
+                .find(|repository| repository.id == repository_id);
+            let shared_code = repository.map_or(0, |repository| {
+                code_paths
+                    .iter()
+                    .filter(|path| repository.files.contains(path))
+                    .count()
+            });
+            let score = shared_code * 1000
+                + keywords.score(
+                    &title.to_lowercase(),
+                    &format!("{summary} {tags} {markdown}").to_lowercase(),
+                );
+            if repository.is_some() || same_session || score > 0 {
+                candidates.push((
+                    ArchiveTopic {
+                        id,
+                        title,
+                        summary,
+                        repository_id,
+                        code_paths,
+                        can_update: archived && repository.is_some(),
+                    },
+                    score,
+                    repository.is_some() || same_session,
+                ));
+            }
+        }
+        let mut ranked = candidates
             .iter()
-            .filter(|(_, score)| *score > 0)
+            .filter(|(_, score, _)| *score > 0)
             .collect::<Vec<_>>();
-        lexical.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.id.cmp(&b.0.id)));
-        let mut topics = lexical
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.id.cmp(&b.0.id)));
+        let mut topics = ranked
             .into_iter()
             .take(8)
-            .map(|(topic, _)| topic.clone())
+            .map(|(topic, _, _)| topic.clone())
             .collect::<Vec<_>>();
-        for (topic, _) in rows {
+        for (topic, _, in_scope) in candidates {
             if topics.len() == 16 {
                 break;
             }
-            if !topics.iter().any(|t| t.id == topic.id) {
+            if in_scope && !topics.iter().any(|existing| existing.id == topic.id) {
                 topics.push(topic);
             }
         }
@@ -353,13 +381,50 @@ impl Pipeline {
         if extraction.memories.is_empty() {
             return Ok(0);
         }
-        let repository = vault.add_repository(RepositoryInput {
-            name: turn.repository_name.clone(),
-            remote: turn
-                .repository_remote
-                .clone()
-                .ok_or("该轮缺少 Git 远程仓库")?,
-        })?;
+        let repositories = turn.repositories();
+        let ids = extraction
+            .memories
+            .iter()
+            .enumerate()
+            .map(|(index, memory)| {
+                memory.target_id.clone().unwrap_or_else(|| {
+                    format!(
+                        "ARC-{}",
+                        &blake3::hash(format!("{}:{index}", turn.source_id).as_bytes()).to_hex()
+                            [..24]
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let plans = extraction
+            .memories
+            .iter()
+            .enumerate()
+            .map(|(index, memory)| {
+                let target = memory.repository_id.as_deref().or_else(|| {
+                    repositories
+                        .first()
+                        .map(|repository| repository.id.as_str())
+                });
+                let repository = repositories
+                    .iter()
+                    .find(|repository| Some(repository.id.as_str()) == target)
+                    .ok_or("该条记忆缺少所属 Git 仓库")?;
+                Ok((index, memory, repository))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let mut excluded = std::collections::BTreeSet::new();
+        for (index, _, repository) in &plans {
+            if self
+                .meta(&format!(
+                    "excluded_repository:{}:{}",
+                    repository.id, turn.source_id
+                ))?
+                .is_some()
+            {
+                excluded.insert(ids[*index].clone());
+            }
+        }
         let source = ArchiveSource {
             source_id: turn.source_id.clone(),
             session_id: turn.session_id.clone(),
@@ -367,7 +432,43 @@ impl Pipeline {
             input_truncated: extraction.input_truncated,
             message_role: None,
         };
-        for (index, memory) in extraction.memories.iter().enumerate() {
+        let mut written = 0;
+        for (index, extracted, repository) in plans {
+            if excluded.contains(&ids[index]) {
+                continue;
+            }
+            let repository = vault.add_repository(RepositoryInput {
+                name: repository.name.clone(),
+                remote: repository.remote.clone(),
+            })?;
+            let id = &ids[index];
+            let mut memory = extracted.clone();
+            memory.related_ids.extend(
+                memory
+                    .related_indices
+                    .iter()
+                    .map(|index| ids[*index].clone()),
+            );
+            memory
+                .related_ids
+                .extend(vault.memories_for_code(&repository.id, &memory.code_paths)?);
+            let mut statement = self.db.prepare("SELECT id FROM memory_index.memories WHERE id IN (SELECT value FROM json_each(?1))").map_err(|e| e.to_string())?;
+            let existing = statement
+                .query_map(
+                    [serde_json::to_string(&memory.related_ids).map_err(|e| e.to_string())?],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|e| e.to_string())?
+                .collect::<Result<std::collections::BTreeSet<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            memory.related_ids.retain(|related| {
+                related != id
+                    && !excluded.contains(related)
+                    && (existing.contains(related) || ids.contains(related))
+            });
+            memory.related_ids.sort();
+            memory.related_ids.dedup();
+            written += 1;
             let mut source = source.clone();
             source.message_role = Some(
                 if turn.user_text.contains(&memory.evidence) {
@@ -379,7 +480,7 @@ impl Pipeline {
             );
             if let Some(id) = &memory.target_id {
                 let baseline = self.archive_baseline(id)?;
-                vault.extend_archive(id, &repository.id, memory, &source, baseline.as_deref())?;
+                vault.extend_archive(id, &repository.id, &memory, &source, baseline.as_deref())?;
                 self.db
                     .execute(
                         "UPDATE archive_memories SET source_id=?2 WHERE memory_id=?1",
@@ -388,10 +489,6 @@ impl Pipeline {
                     .map_err(|e| e.to_string())?;
                 continue;
             }
-            let id = format!(
-                "ARC-{}",
-                &blake3::hash(format!("{}:{index}", turn.source_id).as_bytes()).to_hex()[..24]
-            );
             let quote = memory
                 .evidence
                 .split('\n')
@@ -411,7 +508,7 @@ impl Pipeline {
                     kind: memory.kind.clone(),
                     tags: memory.tags.clone(),
                     markdown,
-                    related_ids: Vec::new(),
+                    related_ids: memory.related_ids.clone(),
                     revision: None,
                     source: Some(format!(
                         "Codex · 会话 {} · 轮次 {}",
@@ -419,6 +516,7 @@ impl Pipeline {
                     )),
                 },
                 &source,
+                &memory.code_paths,
             )?;
             self.db
                 .execute(
@@ -427,7 +525,7 @@ impl Pipeline {
                 )
                 .map_err(|e| e.to_string())?;
         }
-        Ok(extraction.memories.len())
+        Ok(written)
     }
 
     fn archive_baseline(&self, id: &str) -> Result<Option<String>, String> {
@@ -496,6 +594,14 @@ impl Pipeline {
             )
             .map_err(|e| e.to_string())?;
         self.sync_embedding_content(id, &content, service_key, configured)
+    }
+
+    pub fn remove_deleted_memories(&self, repository_id: &str) -> Result<(), String> {
+        self.db.execute("INSERT OR IGNORE INTO meta SELECT 'excluded_repository:'||?1||':'||source_id,'1' FROM turns WHERE status IN ('pending','failed')", [repository_id]).map_err(|e| e.to_string())?;
+        self.db.execute_batch(
+            "DELETE FROM embeddings WHERE NOT EXISTS(SELECT 1 FROM memory_index.memories m WHERE m.id=embeddings.memory_id);
+             DELETE FROM archive_memories WHERE NOT EXISTS(SELECT 1 FROM memory_index.memories m WHERE m.id=archive_memories.memory_id);"
+        ).map_err(|e| e.to_string())
     }
 
     fn sync_embedding_content(
