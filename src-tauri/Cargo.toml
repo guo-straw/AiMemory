@@ -1,6 +1,6 @@
 [package]
 name = "knowtrace"
-version = "0.2.4"
+version = "0.2.5"
 description = "KnowTrace · 知迹，本地项目记忆工作台"
 authors = ["KnowTrace"]
 edition = "2021"

@@ -18,6 +18,7 @@ pub mod transfer;
 #[cfg(test)]
 mod transfer_flow_tests;
 mod update;
+pub mod usage;
 mod workspace;
 
 use config::{ServiceInput, ServiceKind, SettingsStore, SettingsView, UpdateSettings};
@@ -678,6 +679,7 @@ pub fn run() {
             fs::create_dir_all(&data_dir)?;
             let settings = SettingsStore::load(&data_dir, codex::default_codex_directory())?;
             app.manage(mcp_http::HttpRuntime::default());
+            app.manage(usage::Runtime::new(&data_dir)?);
             app.manage(AppState {
                 vault: Mutex::new(None),
                 settings_path: data_dir.join("workspace.json"),
@@ -712,9 +714,20 @@ pub fn run() {
                 })
                 .build(app)?;
             archive::start(app.handle());
+            usage::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            usage::usage_scan,
+            usage::usage_overview,
+            usage::usage_sessions,
+            usage::usage_detail,
+            usage::usage_preferences_save,
+            usage::usage_prices_get,
+            usage::usage_prices_save,
+            usage::usage_issues,
+            usage::usage_open_source,
+            usage::usage_export,
             update::app_update_check,
             update::app_update_download,
             workspace_open,

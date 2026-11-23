@@ -245,7 +245,8 @@ kbd { font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; colo
 .modal footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 27px; }
 .repository-menu { position: fixed; z-index: 30; min-width: 164px; padding: 5px; background: var(--bg, #fff); color: var(--fg, #1a1c1f); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 8px 28px #1a1c1f20; }
 .repository-menu button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 5px; padding: 10px; text-align: left; background: transparent; color: inherit; font-size: 13px; }
-.repository-menu button:hover, .repository-menu button:focus-visible { background: var(--side); outline: 2px solid var(--accent); outline-offset: -2px; }
+.repository-menu button:focus { outline: none; }
+.repository-menu button:hover, .repository-menu button:focus-visible { background: var(--hover, #edeff3); }
 .repository-menu .danger-text, .danger-button { color: var(--danger, #b4232d); }
 .danger-button { border-color: currentColor; }
 .toast { position: fixed; z-index: 30; bottom: 27px; left: calc(50% + 108px); transform: translateX(-50%); display: flex; align-items: center; gap: 9px; padding: 13px 19px; background: #1a1c1f; color: #fff; border-radius: 9px; font-size: 13px; box-shadow: 0 5px 20px #1a1c1f20; }

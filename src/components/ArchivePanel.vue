@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import { Activity, Archive, Clock3, GitBranch, RefreshCw } from 'lucide-vue-next';
 import type { ArchiveStatus, MemorySummary } from '../types';
 
-const props = defineProps<{ status: ArchiveStatus | null; memories: MemorySummary[]; readError: string; retrying: boolean }>();
+const props = defineProps<{ status: ArchiveStatus | null; memories: MemorySummary[]; readError: string; retrying: boolean; embedded?: boolean }>();
 const emit = defineEmits<{ retry: []; settings: []; openMemory: [id: string] }>();
 const usage = computed(() => [
   { label: '聊天输入', value: props.status?.chatInputTokens ?? 0, color: '#3566F0' },
@@ -23,13 +23,13 @@ function duration(value: number | null) { return value === null ? '—' : value 
 
 <template>
   <section v-if="readError" class="archive-page" data-testid="archive-page">
-    <h1>归档与用量</h1>
+    <h1 v-if="!embedded">记忆归档</h1>
     <p class="archive-error" role="alert">读取归档状态失败。{{ readError }}</p>
   </section>
   <section v-else class="archive-page" data-testid="archive-page">
     <div class="page-heading">
-      <div>
-        <h1>归档与用量</h1>
+      <div v-if="!embedded">
+        <h1>记忆归档</h1>
       </div>
       <div class="archive-page-actions">
         <button v-if="hasFailure" class="button" :disabled="retrying" @click="emit('retry')" data-testid="retry-archive"><RefreshCw :size="14" :class="{ spinning: retrying }" />{{ retrying ? '正在重试…' : '重试失败任务' }}</button>
@@ -83,7 +83,7 @@ function duration(value: number | null) { return value === null ? '—' : value 
       <section class="usage-panel">
         <header>
           <Activity :size="18" />
-          <h2>模型用量</h2>
+          <h2>记忆归档模型用量</h2>
         </header>
         <div class="usage-total">
           <strong>{{ number(totalTokens) }}</strong>

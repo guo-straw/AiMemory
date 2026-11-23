@@ -4,15 +4,15 @@
 
 知迹是一款 macOS 和 Windows 桌面应用，帮你找回代码背后的决定。它把 Codex 对话中的结论和原文依据保存为本地 Markdown，按 Git 仓库整理。换一个会话，编码助手也能通过模型上下文协议（MCP）查到这项决定，以及当时为什么这样做。
 
-**v0.2.4** 新增仓库右键重命名与删除，改进代码归属及记忆关联，并将 Windows 后台 Git 调用改为无窗口启动。升级会沿用原来的记忆库、模型配置和归档进度。[查看发布说明](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.4)
+**v0.2.5** 新增 Codex 本地用量统计，支持趋势、使用日历、会话追溯和 CSV 导出，默认按 OpenAI 官方定价估算参考费用，并改进滚动体验。升级会沿用原来的记忆库、模型配置和归档进度。[查看发布说明](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.5)
 
-## 下载 v0.2.4
+## 下载 v0.2.5
 
 | 平台 | 安装包 |
 | --- | --- |
-| macOS · Apple 芯片（M 系列） | [下载 ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.4/KnowTrace_0.2.4_aarch64.dmg) |
-| macOS · Intel | [下载 x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.4/KnowTrace_0.2.4_x64.dmg) |
-| Windows · x64 | [下载安装程序](https://github.com/guo-straw/AiMemory/releases/download/v0.2.4/KnowTrace_0.2.4_x64-setup.exe) |
+| macOS · Apple 芯片（M 系列） | [下载 ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.5/KnowTrace_0.2.5_aarch64.dmg) |
+| macOS · Intel | [下载 x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.5/KnowTrace_0.2.5_x64.dmg) |
+| Windows · x64 | [下载安装程序](https://github.com/guo-straw/AiMemory/releases/download/v0.2.5/KnowTrace_0.2.5_x64-setup.exe) |
 
 macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序未签名。
 
@@ -25,6 +25,7 @@ macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序�
 - **先读摘要，再看依据。** 桌面端和 MCP 共用检索逻辑。查询默认返回最多五条摘要，可继续读指定章节或单轮引文。向量不可用时，仍可用本地关键词或完整 ID 查找。
 - **按代码归档和关联。** 同一轮涉及多个 Git 仓库时，前端、后端的记忆分别归入对应仓库。同一 Git 仓库中的代码仍归在一起；同文件的独立修改、功能依赖和跨仓库协作可以互相关联，在详情和记忆星图中沿关联阅读。
 - **管理仓库。** 右键侧栏或设置页中的仓库可重命名或删除。删除会移除关联，并将记忆文件放入记忆库的 `.aimemory/trash` 本地回收目录，不改动原始 Git 项目。后续新归档仍可重新接入该仓库。
+- **平滑浏览。** 列表、正文和设置页支持连续变速的滚轮滚动，连续滚动平顺提速，停止后逐渐减速；仓库右键菜单使用浅色背景高亮。
 
 <details>
 <summary>查看记忆写入与更新流程图</summary>
@@ -39,6 +40,12 @@ macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序�
 ![从仓库内查询，到语义或关键词检索，再到摘要、章节和原文依据](assets/readme/memory-retrieval.zh.png)
 
 </details>
+
+## Codex 用量统计
+
+在「归档与用量 → Codex 用量」查看本机 Codex 的 Token、缓存命中、每日趋势与会话、模型、项目汇总。直接扫描 Codex 目录中的 `sessions` 和 `archived_sessions`，独立于自动归档开关；会话详情可以追溯到原始日志，筛选结果可导出为 CSV。
+
+参考费用默认采用内置的 [OpenAI 官方 API 定价](https://developers.openai.com/api/docs/pricing)，按模型、档位及 272K 输入阈值区分长短上下文；可以在「定价」中手动覆盖或恢复官方价格。没有公开价格的模型及缺少写入时长的缓存写入保留为未定价。费用估算与日志中的额度快照分别展示。统计数据库保存在应用数据目录的 `codex-usage.sqlite`，切换记忆库不会清空用量。
 
 ## 第一次使用
 

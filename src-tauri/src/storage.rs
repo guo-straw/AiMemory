@@ -517,6 +517,12 @@ impl Vault {
         Ok(MemoryGraph { nodes, edges })
     }
 
+    pub fn memories_for_session(&self, session: &str) -> Result<Vec<MemorySummary>, String> {
+        self.db.prepare("SELECT DISTINCT m.id,m.repository_id,m.title,m.summary,m.kind,m.tags,m.updated_at,m.path FROM memories m JOIN memory_sources s ON s.memory_id=m.id WHERE s.session_id=?1 ORDER BY m.updated_at DESC")
+            .map_err(|e|e.to_string())?.query_map([session], summary_row).map_err(|e|e.to_string())?
+            .collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    }
+
     pub fn read(&self, id: &str) -> Result<MemoryRecord, String> {
         let path: String = self
             .db

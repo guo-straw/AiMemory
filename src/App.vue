@@ -11,9 +11,10 @@ import MemoryEditor from './components/MemoryEditor.vue';
 import MemoryProvenance from './components/MemoryProvenance.vue';
 import MemoryUpdateLog from './components/MemoryUpdateLog.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
-import ArchivePanel from './components/ArchivePanel.vue';
+import ArchiveUsagePage from './components/ArchiveUsagePage.vue';
 import ArchiveSidebarStatus from './components/ArchiveSidebarStatus.vue';
 import { getArchiveSidebarState } from './archive-sidebar';
+import { installSmoothWheelScroll } from './smooth-scroll';
 import MemoryStarMap from './components/MemoryStarMap.vue';
 import { REPOSITORY_COLORS } from './graph';
 import ThemePanel from './components/ThemePanel.vue';
@@ -40,6 +41,7 @@ let graphVersion = 0;
 let workbenchNeedsRefresh = false;
 const appSettings = ref<AppSettings | null>(null);
 const archive = ref<ArchiveStatus | null>(null);
+const archiveTab = ref<'usage' | 'archive'>('usage');
 const archiveReadError = ref('');
 const archiveSidebarState = computed(() => getArchiveSidebarState(archive.value, !!archiveReadError.value));
 const settingsPanel = ref<InstanceType<typeof SettingsPanel>>();
@@ -96,6 +98,7 @@ let pollingArchive = false;
 let archiveRevision = '';
 let lastMemoryWrites: number | null = null;
 let unlistenClose: UnlistenFn | undefined;
+let stopSmoothWheelScroll: (() => void) | undefined;
 let discardOnClose = false;
 
 const repositories = computed(() => workspace.value?.repositories ?? []);
@@ -153,6 +156,7 @@ function showSettingsSection(section: 'settings') {
 }
 
 function openArchiveDestination(target: 'archive' | 'settings') {
+  if (target === 'archive') archiveTab.value = 'archive';
   if (view.value === target) {
     sidebarOpen.value = false;
     return;
@@ -706,6 +710,7 @@ watch([activeRepositoryId, query, searchMode], () => {
 }, { flush: 'sync' });
 
 onMounted(async () => {
+  stopSmoothWheelScroll = installSmoothWheelScroll();
   document.addEventListener('keydown', keydown);
   document.addEventListener('pointerdown', closeRepositoryMenu);
   window.addEventListener('resize', closeRepositoryMenu);
@@ -750,6 +755,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeRepositoryMenu);
   window.removeEventListener('resize', closeRepositoryMenu);
   document.removeEventListener('scroll', closeRepositoryMenu, true);
+  stopSmoothWheelScroll?.();
   unlistenClose?.();
 });
 </script>
@@ -827,7 +833,7 @@ onBeforeUnmount(() => {
         <h1>在桌面端打开记忆工作台</h1>
         <code>pnpm desktop</code>
       </section>
-      <section v-else-if="!workspace" class="launch-view">
+      <section v-else-if="!workspace && view !== 'archive'" class="launch-view">
         <span class="welcome-mark">
           <BookOpen :size="34" />
         </span>
@@ -976,7 +982,7 @@ onBeforeUnmount(() => {
             <div v-else-if="selectedMemory.embeddingStatus === 'pending' || selectedMemory.embeddingStatus === 'processing'" class="memory-index-banner" role="status">
               <Clock3 :size="16" />
               <span>正文已保存，向量{{ selectedMemory.embeddingStatus === 'processing' ? '正在后台生成' : '等待后台生成' }}。</span>
-              <button @click="navigate(() => { view = 'archive'; })">查看归档</button>
+              <button @click="openArchiveDestination('archive')">查看归档</button>
             </div>
             <div v-else-if="selectedMemory.embeddingStatus === 'failed'" class="memory-index-banner failed" role="status">
               <span>正文已保存，向量生成失败。{{ selectedMemory.embeddingError }}</span>
@@ -1016,8 +1022,8 @@ onBeforeUnmount(() => {
         </section>
       </div>
       <MemoryEditor v-else-if="view === 'editor'" :key="editorKey" ref="editor" :memory="editingMemory" :repositories="repositories" :active-repository-id="activeRepositoryId" :all-memories="allMemories" :saving="saving" @save="saveMemory" @cancel="showWorkbench()" />
-      <ArchivePanel v-else-if="view === 'archive'" :status="archive" :memories="allMemories" :read-error="archiveReadError" :retrying="retryingArchive" @retry="retryArchive" @open-memory="id => navigate(() => { view = 'workbench'; selectMemory(id); })" @settings="navigate(() => { view = 'settings'; })" />
-      <SettingsPanel v-else-if="view === 'settings'" ref="settingsPanel" :settings="appSettings" :workspace="workspace" :saving="savingSettings" :loading="loading" :transferring="transferPanel?.busy" @save="saveAppSettings" @choose-workspace="selectDirectory" @open-workspace="openDirectory" @refresh="refreshWorkspace" @add-repository="navigate(() => { repositoryDialog = true; })" @repository-menu="openRepositoryMenu">
+      <ArchiveUsagePage v-else-if="view === 'archive'" v-model="archiveTab" :status="archive" :memories="allMemories" :read-error="archiveReadError" :retrying="retryingArchive" @retry="retryArchive" @open-memory="id => navigate(() => { view = 'workbench'; selectMemory(id); })" @settings="navigate(() => { view = 'settings'; })" />
+      <SettingsPanel v-else-if="view === 'settings' && workspace" ref="settingsPanel" :settings="appSettings" :workspace="workspace" :saving="savingSettings" :loading="loading" :transferring="transferPanel?.busy" @save="saveAppSettings" @choose-workspace="selectDirectory" @open-workspace="openDirectory" @refresh="refreshWorkspace" @add-repository="navigate(() => { repositoryDialog = true; })" @repository-menu="openRepositoryMenu">
         <template #theme="{ back }"><ThemePanel embedded :theme="theme" :saving="savingTheme" @change="changeTheme" @back="back" /></template>
         <template #transfer="{ back }">
           <TransferPanel v-if="!savingTheme" ref="transferPanel" embedded :workspace="workspace" :settings="appSettings" :theme="theme" @imported="importedTransfer" @back="back" />

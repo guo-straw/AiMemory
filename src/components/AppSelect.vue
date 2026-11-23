@@ -13,6 +13,7 @@ const attrs = useAttrs();
 const trigger = ref<HTMLButtonElement>();
 const list = ref<HTMLElement>();
 const opened = ref(false);
+const portalTarget = ref<HTMLElement | string>('body');
 const activeIndex = ref(0);
 const scrollTop = ref(0);
 const rowHeight = 36;
@@ -57,6 +58,7 @@ function revealActive() {
 
 async function openMenu() {
   if (props.disabled || !props.options.length) return;
+  portalTarget.value = trigger.value!.closest<HTMLElement>('dialog[open]') ?? document.body;
   activeIndex.value = Math.max(0, props.options.findIndex(option => option.value === props.modelValue));
   scrollTop.value = 0;
   positionMenu();
@@ -129,7 +131,7 @@ onBeforeUnmount(() => {
   <button ref="trigger" v-bind="attrs" type="button" class="app-select" role="combobox" aria-haspopup="listbox" :aria-expanded="opened" :aria-controls="listId" :aria-activedescendant="opened ? `${listId}-${activeIndex}` : undefined" :disabled="disabled || !options.length" :title="selectedLabel" @click="opened ? closeMenu() : openMenu()" @keydown="keydown">
     <span class="app-select-label">{{ selectedLabel }}</span><ChevronDown :size="14" aria-hidden="true" />
   </button>
-  <Teleport to="body">
+  <Teleport :to="portalTarget">
     <div v-if="opened" :id="listId" ref="list" class="app-select-list" role="listbox" :aria-label="attrs['aria-label'] as string | undefined" :style="menuStyle" :data-testid="listTestId" @scroll="scrollTop = ($event.target as HTMLElement).scrollTop" @keydown="keydown">
       <div class="app-select-spacer" role="presentation" :style="{ height: `${options.length * rowHeight}px` }">
         <button v-for="(option, offset) in visibleOptions" :id="`${listId}-${firstVisible + offset}`" :key="option.value" type="button" role="option" tabindex="-1" class="app-select-option" :class="{ active: firstVisible + offset === activeIndex }" :aria-selected="option.value === modelValue" :aria-posinset="firstVisible + offset + 1" :aria-setsize="options.length" :title="option.label" :style="{ top: `${(firstVisible + offset) * rowHeight}px` }" @pointermove="activeIndex = firstVisible + offset" @click="selectOption(firstVisible + offset)">

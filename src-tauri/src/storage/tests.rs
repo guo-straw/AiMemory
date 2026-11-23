@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn usage_detail_finds_each_archived_memory_once_by_session() {
+    let root = fixture();
+    let mut vault = Vault::open(root.path()).unwrap();
+    let repo = add_repository(&mut vault, "usage-project");
+    let source = ArchiveSource {
+        source_id: "codex:usage-session:turn-1".into(),
+        session_id: "usage-session".into(),
+        turn_id: "turn-1".into(),
+        input_truncated: false,
+        message_role: None,
+    };
+    let input = || new_memory(&repo, "用量来源", "## 结论\n可按会话找到归档。\n");
+    vault
+        .save_archive("ARC-usage-source", input(), &source, &[])
+        .unwrap();
+    let followup = ArchiveSource {
+        source_id: "codex:usage-session:turn-2".into(),
+        turn_id: "turn-2".into(),
+        ..source
+    };
+    vault
+        .save_archive("ARC-usage-source", input(), &followup, &[])
+        .unwrap();
+    let found = vault.memories_for_session("usage-session").unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].id, "ARC-usage-source");
+    assert!(vault
+        .memories_for_session("other-session")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn repository_rename_keeps_identity_and_delete_removes_links_after_rebuild() {
     let root = fixture();
     let mut vault = Vault::open(root.path()).unwrap();

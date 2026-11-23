@@ -4,15 +4,15 @@
 
 KnowTrace is a desktop app for macOS and Windows that helps you find the decisions behind your code. It saves decisions from Codex conversations as local Markdown files, grouped by Git repository, alongside the words that support them. In a fresh session, your coding assistant can use the Model Context Protocol (MCP) to look up both the decision and its reasoning.
 
-**v0.2.3** is the first release under the KnowTrace name. If you are upgrading from AiMemory, your existing library, model settings, and archive progress carry over. [Release notes](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.3)
+**v0.2.5** adds local Codex usage statistics, daily trends, a usage calendar, session details, and CSV export. Reference costs use OpenAI’s official API prices by default. Scrolling is smoother, and upgrades preserve your existing library, model settings, and archive progress. [Release notes](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.5)
 
-## Download v0.2.3
+## Download v0.2.5
 
 | Platform | Installer |
 | --- | --- |
-| macOS · Apple silicon (M series) | [Download the ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.3/KnowTrace_0.2.3_aarch64.dmg) |
-| macOS · Intel | [Download the x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.3/KnowTrace_0.2.3_x64.dmg) |
-| Windows · x64 | [Download the installer](https://github.com/guo-straw/AiMemory/releases/download/v0.2.3/KnowTrace_0.2.3_x64-setup.exe) |
+| macOS · Apple silicon (M series) | [Download the ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.5/KnowTrace_0.2.5_aarch64.dmg) |
+| macOS · Intel | [Download the x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.5/KnowTrace_0.2.5_x64.dmg) |
+| Windows · x64 | [Download the installer](https://github.com/guo-straw/AiMemory/releases/download/v0.2.5/KnowTrace_0.2.5_x64-setup.exe) |
 
 The macOS builds use ad hoc signing and have not been notarized by Apple. The Windows installer is unsigned.
 
@@ -38,6 +38,12 @@ In the sample project, ask “Why did we switch export progress to polling?” T
 ![A repository query leads to keyword or semantic retrieval, then summaries, sections, and source quotes](assets/readme/memory-retrieval.en.png)
 
 </details>
+
+## Codex usage statistics
+
+Open **Archives & Usage → Codex Usage** (归档与用量 → Codex 用量) to view recorded tokens, cache hits, daily trends, and breakdowns by session, model, and project. KnowTrace scans `sessions` and `archived_sessions` directly from your local Codex directory, independently of automatic memory archiving. Filter by date, project, model, or role; use the calendar to select a day; inspect source logs in session details; or export all matching records as CSV.
+
+Reference costs use bundled [OpenAI API prices](https://developers.openai.com/api/docs/pricing), including Standard/Fast tiers and the 272K input threshold for long contexts. Override prices or restore the official defaults under **Pricing** (定价). Models without published prices and cache writes without a recorded retention duration remain unpriced. Quota snapshots are shown separately. Usage is stored in `codex-usage.sqlite` in the app’s data directory and is retained when you switch memory libraries.
 
 ## Get started
 
