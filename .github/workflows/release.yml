@@ -9,7 +9,7 @@ on:
       releaseTag:
         description: Release tag matching the project version
         required: true
-        default: v0.2.5
+        default: v0.2.6
         type: string
 
 permissions:
@@ -88,6 +88,10 @@ jobs:
         run: pnpm test:archive-sidebar
       - name: Check model service configuration
         run: pnpm test:model-services
+      - name: Check Harness and settings UI behavior
+        run: pnpm test:harness-ui
+      - name: Check official usage price rules
+        run: pnpm test:usage-prices
       - name: Test storage and built-in MCP
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --lib --bin knowtrace
       - name: Configure macOS ad-hoc signature
@@ -141,12 +145,12 @@ jobs:
         run: |
           cat > release-notes.md <<'NOTES'
           本次更新：
-          - 新增「归档与用量 → Codex 用量」，直接从本机会话日志增量统计 Token、缓存命中和会话用量，支持历史日志、主对话、子代理及系统辅助。
-          - 支持按日期、项目、模型和角色筛选，查看每日趋势、模型分布、模型及项目汇总；使用日历提供最近 12 周与全年视图，点击日期可查看当天用量。
-          - 默认使用 OpenAI 官方 API 价格估算参考费用，区分普通、Fast 档位及长短上下文；支持手动覆盖和恢复官方定价。费用估算与日志额度快照分别展示。
-          - 会话详情可查看 Token 分项、价格来源及计算过程，并追溯原始日志和关联记忆；当前筛选的全部用量记录可导出为 CSV。
-          - 改进列表、正文及设置页的连续滚轮滚动，调整仓库右键菜单高亮，修复用量卡片边缘衔接和弹层中的下拉选择。
-          - 升级沿用原有记忆库、模型配置和归档进度；用量保存在独立的本地数据库中。
+          - 新增 DeepSeek Harness 自动归档与会话用量，保留 Codex；两种归档来源可独立选择，兼容 V4 分帧 Zstandard 日志。用量支持来源筛选、趋势、使用日历、模型与项目汇总、记录追溯和 CSV 导出。
+          - 记忆星图支持 35%–1600% 缩放，标题随缩放渐隐渐显，55% 及以下隐藏；充分放大后展示可视绘图区内节点的完整标题，仓库图例自动换行。
+          - 修复设置分类切换时标题、保存按钮和标签栏的布局跳动，稳定窄窗、未保存及保存中的显示。
+          - 已收录官方模型 ID 默认套用官方 API 参考价，自定义网关保留原供应商身份；支持手动覆盖与恢复官方预设。参考价不代表网关实际账单，需按缓存时长计费而日志缺少时长的写入仍未定价。
+          - 升级沿用原有记忆库、模型配置和 Codex 归档进度，默认仍只选择 Codex；Harness 需手动勾选并保存。各来源只处理启用后的新轮次，不回扫开启前的历史或正在进行的轮次。
+          - 原始日志始终只读。Harness 只归档有人工输入与最终正文的成功根会话；用量剔除继承消费、保留真实失败与重试，不含压缩、标题等辅助请求，不等同于完整服务商账单。
 
           仅提供 macOS arm64、macOS Intel x64 与 Windows x64 三个平台应用安装包，MCP 已内置于应用。
 

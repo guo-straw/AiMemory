@@ -1,7 +1,7 @@
 {
   "name": "knowtrace",
   "private": true,
-  "version": "0.2.5",
+  "version": "0.2.6",
   "type": "module",
   "packageManager": "pnpm@11.25.0",
   "scripts": {
@@ -13,6 +13,8 @@
     "demo": "node scripts/create-demo.mjs",
     "test:storage": "node scripts/desktop.mjs test",
     "test:graph": "node --experimental-strip-types scripts/test-graph.mjs",
+    "test:harness-ui": "node scripts/test-harness-ui.mjs",
+    "test:usage-prices": "node scripts/test-usage-prices.mjs",
     "test:model-services": "node --experimental-strip-types scripts/test-model-services.mjs",
     "test:archive-sidebar": "node --experimental-strip-types scripts/test-archive-sidebar.mjs"
   },

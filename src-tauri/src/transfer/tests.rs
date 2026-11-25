@@ -27,6 +27,8 @@ fn config() -> AppConfig {
             has_api_key: true,
         },
         codex_directory: "/private/codex-path".into(),
+        harness_directory: "/private/harness-path".into(),
+        archive_sources: vec!["codex".into()],
         archive_enabled: false,
         archive_started_at: Some("2026-11-20T00:00:00Z".into()),
         run_in_background: true,

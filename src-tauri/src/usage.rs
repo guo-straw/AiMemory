@@ -1,3 +1,4 @@
+mod harness_parser;
 mod parser;
 mod store;
 #[cfg(test)]
@@ -87,6 +88,7 @@ impl Tokens {
 #[serde(rename_all = "camelCase")]
 pub struct UsageRecord {
     pub id: String,
+    pub client: String,
     pub thread_id: String,
     pub turn_id: String,
     pub at: i64,
@@ -123,6 +125,10 @@ pub struct Bucket {
 pub struct Filters {
     #[serde(skip)]
     pub source: String,
+    #[serde(skip)]
+    pub harness_source: String,
+    #[serde(default)]
+    pub client: Option<String>,
     pub start: i64,
     pub end: i64,
     pub project: Option<String>,
@@ -134,6 +140,7 @@ pub struct Filters {
 
 impl Filters {
     fn validate(&self) -> Result<(), String> {
+        validate_client(self.client.as_deref())?;
         if self.start >= self.end {
             return Err("结束时间必须晚于开始时间".into());
         }
@@ -180,6 +187,7 @@ pub struct Trend {
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub id: String,
+    pub client: String,
     pub title: String,
     pub parent_id: Option<String>,
     pub role: String,
@@ -193,6 +201,7 @@ pub struct Session {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Issue {
+    pub client: String,
     pub file: String,
     pub line: i64,
     pub reason: String,
@@ -270,6 +279,14 @@ pub struct Overview {
     pub status: ScanStatus,
     pub preferences: Preferences,
     pub directory: String,
+    pub directories: Directories,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Directories {
+    pub codex: String,
+    pub harness: String,
 }
 
 #[derive(Serialize)]
@@ -329,17 +346,16 @@ impl Runtime {
     }
 }
 
-fn directory(state: &crate::AppState) -> Result<String, String> {
-    Ok(state
-        .settings
-        .lock()
-        .map_err(|e| e.to_string())?
-        .config()
-        .codex_directory
-        .clone())
+fn directories(state: &crate::AppState) -> Result<Directories, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?;
+    let config = settings.config();
+    Ok(Directories {
+        codex: config.codex_directory.clone(),
+        harness: config.harness_directory.clone(),
+    })
 }
 
-fn begin_scan(app: &tauri::AppHandle, directory: String, full: bool) -> Result<(), String> {
+fn begin_scan(app: &tauri::AppHandle, directories: Directories, full: bool) -> Result<(), String> {
     let runtime = app.state::<Runtime>();
     if runtime.scanning.swap(true, Ordering::SeqCst) {
         return Ok(());
@@ -354,7 +370,7 @@ fn begin_scan(app: &tauri::AppHandle, directory: String, full: bool) -> Result<(
     tauri::async_runtime::spawn_blocking(move || {
         let runtime = app.state::<Runtime>();
         let result = Store::open(&runtime.path).and_then(|mut store| {
-            store.scan(Path::new(&directory), full, |done, total| {
+            store.scan_sources(&directories, full, |done, total| {
                 let mut status = runtime.status.lock().unwrap();
                 status.completed = done;
                 status.total = total;
@@ -381,7 +397,7 @@ pub fn start(app: &tauri::AppHandle) {
             let result = (|| {
                 let runtime = app.state::<Runtime>();
                 if Store::open(&runtime.path)?.preferences()?.auto_scan {
-                    begin_scan(&app, directory(&app.state::<crate::AppState>())?, false)?;
+                    begin_scan(&app, directories(&app.state::<crate::AppState>())?, false)?;
                 }
                 Ok::<_, String>(())
             })();
@@ -400,7 +416,7 @@ pub(crate) async fn usage_scan(
     state: State<'_, crate::AppState>,
     runtime: State<'_, Runtime>,
 ) -> Result<ScanStatus, String> {
-    begin_scan(&app, directory(&state)?, full.unwrap_or(false))?;
+    begin_scan(&app, directories(&state)?, full.unwrap_or(false))?;
     runtime.status()
 }
 
@@ -410,8 +426,8 @@ pub(crate) async fn usage_overview(
     state: State<'_, crate::AppState>,
     runtime: State<'_, Runtime>,
 ) -> Result<Overview, String> {
-    prepare_filters(&mut filters, &state)?;
-    Store::open(&runtime.path)?.overview(&filters, &directory(&state)?, runtime.status()?)
+    let directories = prepare_filters(&mut filters, &state)?;
+    Store::open(&runtime.path)?.overview(&filters, &directories, runtime.status()?)
 }
 
 #[tauri::command]
@@ -472,10 +488,17 @@ pub(crate) async fn usage_prices_save(
 
 #[tauri::command]
 pub(crate) async fn usage_issues(
+    client: Option<String>,
     state: State<'_, crate::AppState>,
     runtime: State<'_, Runtime>,
 ) -> Result<Vec<Issue>, String> {
-    Store::open(&runtime.path)?.issues(&store::source_id(Path::new(&directory(&state)?)))
+    validate_client(client.as_deref())?;
+    let directories = directories(&state)?;
+    Store::open(&runtime.path)?.issues(
+        &store::source_id(Path::new(&directories.codex)),
+        &store::harness_source_id(Path::new(&directories.harness)),
+        client.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -484,7 +507,8 @@ pub(crate) async fn usage_open_source(
     app: tauri::AppHandle,
     runtime: State<'_, Runtime>,
 ) -> Result<(), String> {
-    let path = Store::open(&runtime.path)?.source_path(&record_id)?;
+    let directory = runtime.path.parent().unwrap().join("usage-sources");
+    let path = Store::open(&runtime.path)?.source_view(&record_id, &directory)?;
     app.opener()
         .open_path(path, None::<&str>)
         .map_err(|e| e.to_string())
@@ -504,7 +528,7 @@ pub(crate) async fn usage_export(
 
 fn write_csv(records: Vec<UsageRecord>, path: &Path) -> Result<(), String> {
     let cell = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
-    let mut csv = String::from("\u{feff}时间,线程,项目,模型,供应商,档位,角色,输入,缓存读取,缓存写入,输出,其中推理,参考费用 USD,来源文件,行号\r\n");
+    let mut csv = String::from("\u{feff}时间,线程,项目,模型,供应商,档位,角色,输入,缓存读取,缓存写入,输出,其中推理,参考费用 USD,来源文件,行号,客户端\r\n");
     for r in records {
         let values = vec![
             chrono::DateTime::from_timestamp_millis(r.at)
@@ -527,6 +551,7 @@ fn write_csv(records: Vec<UsageRecord>, path: &Path) -> Result<(), String> {
             r.cost.map(|v| format!("{v:.6}")).unwrap_or_default(),
             r.file,
             r.line.to_string(),
+            r.client,
         ];
         csv.push_str(&values.iter().map(|v| cell(v)).collect::<Vec<_>>().join(","));
         csv.push_str("\r\n");
@@ -534,8 +559,17 @@ fn write_csv(records: Vec<UsageRecord>, path: &Path) -> Result<(), String> {
     std::fs::write(path, csv).map_err(|e| e.to_string())
 }
 
-fn prepare_filters(filters: &mut Filters, state: &crate::AppState) -> Result<(), String> {
+fn validate_client(client: Option<&str>) -> Result<(), String> {
+    match client {
+        None | Some("codex" | "harness") => Ok(()),
+        _ => Err("无效的用量来源".into()),
+    }
+}
+
+fn prepare_filters(filters: &mut Filters, state: &crate::AppState) -> Result<Directories, String> {
     filters.validate()?;
-    filters.source = store::source_id(Path::new(&directory(state)?));
-    Ok(())
+    let directories = directories(state)?;
+    filters.source = store::source_id(Path::new(&directories.codex));
+    filters.harness_source = store::harness_source_id(Path::new(&directories.harness));
+    Ok(directories)
 }

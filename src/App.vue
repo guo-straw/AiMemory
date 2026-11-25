@@ -1022,7 +1022,7 @@ onBeforeUnmount(() => {
         </section>
       </div>
       <MemoryEditor v-else-if="view === 'editor'" :key="editorKey" ref="editor" :memory="editingMemory" :repositories="repositories" :active-repository-id="activeRepositoryId" :all-memories="allMemories" :saving="saving" @save="saveMemory" @cancel="showWorkbench()" />
-      <ArchiveUsagePage v-else-if="view === 'archive'" v-model="archiveTab" :status="archive" :memories="allMemories" :read-error="archiveReadError" :retrying="retryingArchive" @retry="retryArchive" @open-memory="id => navigate(() => { view = 'workbench'; selectMemory(id); })" @settings="navigate(() => { view = 'settings'; })" />
+      <ArchiveUsagePage v-else-if="view === 'archive'" v-model="archiveTab" :status="archive" :archive-sources="appSettings?.archiveSources" :memories="allMemories" :read-error="archiveReadError" :retrying="retryingArchive" @retry="retryArchive" @open-memory="id => navigate(() => { view = 'workbench'; selectMemory(id); })" @settings="navigate(() => { view = 'settings'; })" />
       <SettingsPanel v-else-if="view === 'settings' && workspace" ref="settingsPanel" :settings="appSettings" :workspace="workspace" :saving="savingSettings" :loading="loading" :transferring="transferPanel?.busy" @save="saveAppSettings" @choose-workspace="selectDirectory" @open-workspace="openDirectory" @refresh="refreshWorkspace" @add-repository="navigate(() => { repositoryDialog = true; })" @repository-menu="openRepositoryMenu">
         <template #theme="{ back }"><ThemePanel embedded :theme="theme" :saving="savingTheme" @change="changeTheme" @back="back" /></template>
         <template #transfer="{ back }">

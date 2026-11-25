@@ -1,5 +1,6 @@
 import type { MemoryGraphEdge, MemorySummary } from './types';
-import type { GraphScope, GraphPoint } from './graph';
+import { graphLabelVisibility, graphPanelMaxHeight, STAR_MAP_MAX_ZOOM, STAR_MAP_MIN_ZOOM } from './graph';
+import type { GraphScope, GraphPoint, GraphLabelDensity } from './graph';
 
 interface SceneNode extends MemorySummary { position: GraphPoint; degree: number; freshness: number }
 interface ProjectedNode { node: SceneNode; x: number; y: number; depth: number; radius: number; color: string; alpha: number; focused: boolean; matched: boolean }
@@ -11,7 +12,7 @@ export interface StarAppearance {
   colorByRepository: boolean;
   nodeSize: number;
   lineWidth: number;
-  labelDensity: '低' | '标准' | '高';
+  labelDensity: GraphLabelDensity;
   panelOpen: boolean;
   showLinks: boolean;
   searchQuery: string;
@@ -30,6 +31,7 @@ export class StarMapRenderer {
   private yaw = -.28;
   private pitch = .2;
   private zoom = 1;
+  private topInset = 110;
   private panX = 0;
   private panY = 0;
   private sprites = new Map<string, HTMLCanvasElement>();
@@ -73,14 +75,17 @@ export class StarMapRenderer {
   requestDraw = () => { if (this.active && !this.frame) this.frame = requestAnimationFrame(() => this.draw()); };
   rotate(dx: number, dy: number) { this.yaw += dx * .006; this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch + dy * .006)); this.requestDraw(); }
   pan(dx: number, dy: number) { this.panX += dx; this.panY += dy; this.requestDraw(); }
-  zoomBy(factor: number) { this.zoom = Math.max(.35, Math.min(4, this.zoom * factor)); this.requestDraw(); return Math.round(this.zoom * 100); }
+  setTopInset(top: number) { this.topInset = top; this.requestDraw(); }
+  zoomBy(factor: number) { this.zoom = Math.max(STAR_MAP_MIN_ZOOM, Math.min(STAR_MAP_MAX_ZOOM, this.zoom * factor)); this.requestDraw(); return Math.round(this.zoom * 100); }
   reset() { this.yaw = -.28; this.pitch = .2; this.zoom = 1; this.panX = 0; this.panY = 0; this.requestDraw(); return 100; }
 
   hit(clientX: number, clientY: number) {
     const rect = this.canvas.getBoundingClientRect();
     const x = clientX - rect.left, y = clientY - rect.top;
-    const label = this.labels.find(label => x >= label.x && x <= label.x + label.width && y >= label.y && y <= label.y + label.height);
-    if (label) return label.id;
+    for (let index = this.labels.length - 1; index >= 0; index--) {
+      const label = this.labels[index];
+      if (x >= label.x && x <= label.x + label.width && y >= label.y && y <= label.y + label.height) return label.id;
+    }
     for (let index = this.projected.length - 1; index >= 0; index--) {
       const point = this.projected[index];
       const distance = Math.hypot(point.x - x, point.y - y);
@@ -139,10 +144,10 @@ export class StarMapRenderer {
     const emphasis = hoveredId ?? selectedId;
     const neighbors = this.adjacency.get(emphasis ?? '') ?? new Set<string>();
     const term = searchQuery.trim().toLocaleLowerCase();
-    const narrow = width < 760;
+    const narrow = width <= 760;
     const roomWidth = width - (panelOpen && !narrow ? 370 : 0);
-    const top = narrow ? 146 : 110;
-    const bottom = narrow && panelOpen ? 63 + Math.min(height * .42, 280) + 18 : 90;
+    const top = this.topInset;
+    const bottom = narrow && panelOpen ? 63 + graphPanelMaxHeight(height, top) + 18 : 90;
     const roomHeight = Math.max(40, height - top - bottom);
     const centerX = roomWidth * .5 + this.panX, centerY = top + roomHeight * .48 + this.panY;
     const scale = Math.max(55, Math.min(roomWidth * .43, roomHeight * .47)) * this.zoom;
@@ -161,7 +166,7 @@ export class StarMapRenderer {
     const byId = new Map(this.projected.map(point => [point.node.id, point]));
     if (this.appearance.showLinks) this.drawLinks(byId, emphasis);
     this.drawStars(emphasis);
-    this.drawLabels(roomWidth, top, height - 80, emphasis);
+    this.drawLabels(roomWidth, top, height - bottom, emphasis);
     ctx.globalAlpha = 1;
     this.canvas.dataset.renderMs = (performance.now() - started).toFixed(2);
     this.canvas.dataset.drawCount = String(Number(this.canvas.dataset.drawCount ?? 0) + 1);
@@ -202,26 +207,44 @@ export class StarMapRenderer {
 
   private drawLabels(width: number, top: number, bottom: number, emphasis: string | null) {
     const ctx = this.context;
-    const maximum = this.appearance.labelDensity === '低' ? 3 : this.appearance.labelDensity === '高' ? 28 : 9;
-    const priority = (point: ProjectedNode) => point.node.id === emphasis ? 1e9 : point.focused ? 1e6 + point.node.degree : point.matched && this.appearance.searchQuery ? 1e5 + point.node.degree : point.node.degree;
-    const ordered = [...this.projected].sort((left, right) => priority(right) - priority(left) || right.depth - left.depth);
+    const visibility = graphLabelVisibility(this.zoom, this.appearance.labelDensity);
     this.labels = [];
-    for (const point of ordered.slice(0, maximum * 10)) {
-      if (this.labels.length === maximum) break;
-      if (point.alpha < .2 || point.x < 15 || point.x > width - 15 || point.y < top || point.y > bottom - 24) continue;
+    if (!visibility) return;
+    const priority = (point: ProjectedNode) => point.node.id === emphasis ? 1e9 : point.focused ? 1e6 + point.node.degree : point.matched && this.appearance.searchQuery ? 1e5 + point.node.degree : point.node.degree;
+    const visible = this.projected.filter(point => point.x >= 0 && point.x <= width && point.y >= top && point.y <= bottom);
+    const ordered = visible.sort((left, right) => priority(right) - priority(left) || right.depth - left.depth);
+    const budget = ordered.length * visibility;
+    const candidates = ordered.slice(0, Math.ceil(budget));
+    // At full detail every visible node gets a title; paint important titles on top.
+    if (visibility === 1) candidates.reverse();
+    for (const [rank, point] of candidates.entries()) {
       const selected = point.node.id === emphasis;
       ctx.font = `${selected ? 550 : 400} ${selected ? 13 : 11}px ${this.palette.font}`;
-      const limit = Math.min(210, width * .6);
-      let text = point.node.title;
-      while (text.length > 1 && ctx.measureText(text).width > limit) text = text.slice(0, -1);
-      if (text !== point.node.title) text = text.slice(0, -1) + '…';
-      const boxWidth = ctx.measureText(text).width + 16, boxHeight = selected ? 41 : 24;
-      const left = Math.max(8, Math.min(width - boxWidth - 8, point.x - boxWidth / 2)), y = point.y + point.radius + 10;
-      if (this.labels.some(box => left < box.x + box.width + 5 && left + boxWidth > box.x - 5 && y < box.y + box.height + 3 && y + boxHeight > box.y - 3)) continue;
+      const limit = Math.max(1, Math.min(240, width - 32));
+      const lines: string[] = [];
+      let line = '';
+      for (const character of point.node.title) {
+        const next = line + character;
+        if (line && ctx.measureText(next).width > limit) { lines.push(line); line = character; }
+        else line = next;
+      }
+      lines.push(line);
+      const boxWidth = Math.max(...lines.map(text => ctx.measureText(text).width)) + 16;
+      const boxHeight = lines.length * 16 + 8 + (selected ? 18 : 0);
+      const left = Math.max(8, Math.min(width - boxWidth - 8, point.x - boxWidth / 2));
+      const below = point.y + point.radius + 10, above = point.y - point.radius - 10 - boxHeight;
+      let y = Math.max(top, Math.min(bottom - boxHeight, below));
+      const collides = (y: number) => this.labels.some(box => left < box.x + box.width + 5 && left + boxWidth > box.x - 5 && y < box.y + box.height + 3 && y + boxHeight > box.y - 3);
+      if (collides(y)) {
+        if (above >= top && !collides(above)) y = above;
+        else if (visibility < 1) continue;
+      }
+      ctx.globalAlpha = (selected ? 1 : .78) * point.alpha * (visibility === 1 ? 1 : Math.min(1, budget - rank));
       if (selected) { ctx.fillStyle = '#111e32ed'; ctx.beginPath(); ctx.roundRect(left, y, boxWidth, boxHeight, 6); ctx.fill(); }
-      ctx.globalAlpha = selected ? 1 : .78; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = selected ? this.palette.foreground : this.palette.muted; ctx.fillText(text, left + boxWidth / 2, y + 12);
-      if (selected) { ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = this.palette.faint; ctx.fillText(point.node.id, left + boxWidth / 2, y + 30); }
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = selected ? this.palette.foreground : this.palette.muted;
+      lines.forEach((text, index) => ctx.fillText(text, left + boxWidth / 2, y + 12 + index * 16));
+      if (selected) { ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = this.palette.faint; ctx.fillText(point.node.id, left + boxWidth / 2, y + boxHeight - 12); }
       this.labels.push({ id: point.node.id, x: left, y, width: boxWidth, height: boxHeight });
     }
     ctx.globalAlpha = 1;

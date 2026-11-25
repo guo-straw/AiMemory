@@ -1,5 +1,6 @@
 use crate::{
     codex::{CodexTurn, RolloutCursor},
+    harness::Cursor as HarnessCursor,
     model_api::{ArchiveTopic, ChatExtraction, EmbeddingResult},
     storage::{ArchiveSource, KeywordQuery, MemoryInput, MemorySummary, RepositoryInput, Vault},
 };
@@ -14,6 +15,7 @@ use std::{
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveTurn {
     pub source_id: String,
+    pub client: String,
     pub repository: String,
     pub session_id: String,
     pub turn_id: String,
@@ -87,6 +89,7 @@ impl Pipeline {
         db.execute_batch("PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS cursors (path TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS harness_cursors (path TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS turns (
                 source_id TEXT PRIMARY KEY, repository TEXT NOT NULL, session_id TEXT NOT NULL,
                 turn_id TEXT NOT NULL, completed_at TEXT NOT NULL, status TEXT NOT NULL,
@@ -142,9 +145,20 @@ impl Pipeline {
     }
 
     pub fn cursors(&self) -> Result<BTreeMap<PathBuf, RolloutCursor>, String> {
+        self.source_cursors("cursors")
+    }
+
+    pub fn harness_cursors(&self) -> Result<BTreeMap<PathBuf, HarnessCursor>, String> {
+        self.source_cursors("harness_cursors")
+    }
+
+    fn source_cursors<T: serde::de::DeserializeOwned>(
+        &self,
+        table: &str,
+    ) -> Result<BTreeMap<PathBuf, T>, String> {
         let mut statement = self
             .db
-            .prepare("SELECT path,value FROM cursors")
+            .prepare(&format!("SELECT path,value FROM {table}"))
             .map_err(|e| e.to_string())?;
         let rows = statement
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
@@ -166,14 +180,43 @@ impl Pipeline {
         enabled_at: &str,
         cursors: &[(PathBuf, RolloutCursor)],
     ) -> Result<(), String> {
+        self.baseline_source(
+            "cursors",
+            &[("codex_directory", directory), ("enabled_at", enabled_at)],
+            cursors,
+        )
+    }
+
+    pub fn baseline_harness(
+        &mut self,
+        directory: &str,
+        enabled_at: &str,
+        cursors: &[(PathBuf, HarnessCursor)],
+    ) -> Result<(), String> {
+        self.baseline_source(
+            "harness_cursors",
+            &[
+                ("harness_directory", directory),
+                ("harness_enabled_at", enabled_at),
+            ],
+            cursors,
+        )
+    }
+
+    fn baseline_source<T: Serialize>(
+        &mut self,
+        table: &str,
+        metadata: &[(&str, &str)],
+        cursors: &[(PathBuf, T)],
+    ) -> Result<(), String> {
         let transaction = self.db.transaction().map_err(|e| e.to_string())?;
         transaction
-            .execute("DELETE FROM cursors", [])
+            .execute(&format!("DELETE FROM {table}"), [])
             .map_err(|e| e.to_string())?;
         for (path, cursor) in cursors {
             transaction
                 .execute(
-                    "INSERT INTO cursors VALUES(?1,?2)",
+                    &format!("INSERT INTO {table} VALUES(?1,?2)"),
                     params![
                         path.display().to_string(),
                         serde_json::to_string(cursor).map_err(|e| e.to_string())?
@@ -181,8 +224,9 @@ impl Pipeline {
                 )
                 .map_err(|e| e.to_string())?;
         }
-        for (key, value) in [("codex_directory", directory), ("enabled_at", enabled_at)] {
-            transaction.execute("INSERT INTO meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key,value]).map_err(|e| e.to_string())?;
+        for (key, value) in metadata {
+            transaction.execute("INSERT INTO meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key,value])
+                .map_err(|e| e.to_string())?;
         }
         transaction.commit().map_err(|e| e.to_string())
     }
@@ -191,6 +235,25 @@ impl Pipeline {
         &mut self,
         path: &Path,
         cursor: &RolloutCursor,
+        turns: &[CodexTurn],
+    ) -> Result<(), String> {
+        self.ingest_source("cursors", path, cursor, turns)
+    }
+
+    pub fn ingest_harness(
+        &mut self,
+        path: &Path,
+        cursor: &HarnessCursor,
+        turns: &[CodexTurn],
+    ) -> Result<(), String> {
+        self.ingest_source("harness_cursors", path, cursor, turns)
+    }
+
+    fn ingest_source<T: Serialize>(
+        &mut self,
+        table: &str,
+        path: &Path,
+        cursor: &T,
         turns: &[CodexTurn],
     ) -> Result<(), String> {
         let transaction = self.db.transaction().map_err(|e| e.to_string())?;
@@ -202,12 +265,28 @@ impl Pipeline {
             };
             transaction.execute("INSERT OR IGNORE INTO turns(source_id,repository,session_id,turn_id,completed_at,status,turn_json,error) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![turn.source_id,turn.repository_name,turn.session_id,turn.turn_id,turn.completed_at,status,serde_json::to_string(turn).map_err(|e| e.to_string())?,error]).map_err(|e| e.to_string())?;
         }
-        transaction.execute("INSERT INTO cursors VALUES(?1,?2) ON CONFLICT(path) DO UPDATE SET value=excluded.value", params![path.display().to_string(),serde_json::to_string(cursor).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+        transaction.execute(&format!("INSERT INTO {table} VALUES(?1,?2) ON CONFLICT(path) DO UPDATE SET value=excluded.value"), params![path.display().to_string(),serde_json::to_string(cursor).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
         transaction.commit().map_err(|e| e.to_string())
     }
 
     pub fn next_turn(&self) -> Result<Option<CodexTurn>, String> {
-        let json:Option<String> = self.db.query_row("SELECT turn_json FROM turns WHERE status='pending' AND extraction IS NULL ORDER BY completed_at, rowid LIMIT 1", [], |r| r.get(0)).optional().map_err(|e| e.to_string())?;
+        self.next_turn_for_sources(&["codex".into(), "harness".into()])
+    }
+
+    pub fn next_turn_for_sources(&self, clients: &[String]) -> Result<Option<CodexTurn>, String> {
+        let codex = clients.iter().any(|client| client == "codex");
+        let harness = clients.iter().any(|client| client == "harness");
+        let json: Option<String> = self
+            .db
+            .query_row(
+                "SELECT turn_json FROM turns WHERE status='pending' AND extraction IS NULL
+             AND ((?1 AND source_id NOT LIKE 'harness:%') OR (?2 AND source_id LIKE 'harness:%'))
+             ORDER BY completed_at, rowid LIMIT 1",
+                params![codex, harness],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
         json.map(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))
             .transpose()
     }
@@ -511,8 +590,16 @@ impl Pipeline {
                     related_ids: memory.related_ids.clone(),
                     revision: None,
                     source: Some(format!(
-                        "Codex · 会话 {} · 轮次 {}",
-                        turn.session_id, turn.turn_id
+                        "{} · 会话 {} · 轮次 {}",
+                        if turn.source_id.starts_with("harness:") {
+                            "DeepSeek Harness"
+                        } else {
+                            "Codex"
+                        },
+                        turn.session_id
+                            .strip_prefix("harness:")
+                            .unwrap_or(&turn.session_id),
+                        turn.turn_id
                     )),
                 },
                 &source,
@@ -763,8 +850,15 @@ impl Pipeline {
         let mut statement=self.db.prepare("SELECT source_id,repository,session_id,turn_id,completed_at,status,memory_count,chat_input,chat_output,embedding_input,chat_latency,embedding_latency,error,usage_incomplete FROM turns ORDER BY completed_at DESC LIMIT 30").map_err(|e|e.to_string())?;
         let recent_turns = statement
             .query_map([], |r| {
+                let source_id: String = r.get(0)?;
                 Ok(ArchiveTurn {
-                    source_id: r.get(0)?,
+                    client: if source_id.starts_with("harness:") {
+                        "harness"
+                    } else {
+                        "codex"
+                    }
+                    .into(),
+                    source_id,
                     repository: r.get(1)?,
                     session_id: r.get(2)?,
                     turn_id: r.get(3)?,

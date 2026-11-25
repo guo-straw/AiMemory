@@ -73,6 +73,115 @@ fn failing_config_write_restores_encrypted_rows_without_reading_the_system_keyri
     );
 }
 
+#[test]
+fn legacy_settings_and_requests_keep_codex_only_archiving() {
+    let fixture = fixture();
+    let store = SettingsStore::load(fixture.path(), fixture.path().join("codex")).unwrap();
+    let mut legacy = serde_json::to_value(store.config()).unwrap();
+    legacy.as_object_mut().unwrap().remove("harnessDirectory");
+    legacy.as_object_mut().unwrap().remove("archiveSources");
+    fs::write(
+        fixture.path().join("services.json"),
+        serde_json::to_vec(&legacy).unwrap(),
+    )
+    .unwrap();
+    let restored = SettingsStore::load(fixture.path(), fixture.path().join("codex")).unwrap();
+    assert_eq!(restored.config().archive_sources, ["codex"]);
+    assert_eq!(
+        restored.config().harness_directory,
+        default_harness_directory_value()
+    );
+    let request: UpdateSettings = serde_json::from_value(legacy).unwrap();
+    assert_eq!(request.archive_sources, ["codex"]);
+    assert_eq!(request.harness_directory, default_harness_directory_value());
+    assert!(!restored.config().archives("harness"));
+}
+
+#[test]
+fn harness_only_archiving_does_not_require_codex_and_normalizes_sessions_directory() {
+    let fixture = fixture();
+    let harness = fixture.path().join("harness");
+    fs::create_dir_all(harness.join("sessions")).unwrap();
+    let mut store =
+        SettingsStore::load(fixture.path(), fixture.path().join("missing-codex")).unwrap();
+    let mut input = update_input(&store);
+    input.archive_enabled = true;
+    input.archive_sources = vec!["harness".into()];
+    input.harness_directory = harness.join("sessions").display().to_string();
+    let settings = store.update(input).unwrap();
+    assert_eq!(
+        Path::new(&settings.harness_directory),
+        harness.canonicalize().unwrap()
+    );
+    assert!(settings.archives("harness"));
+    assert!(!settings.archives("codex"));
+    let reopened =
+        SettingsStore::load(fixture.path(), fixture.path().join("missing-codex")).unwrap();
+    assert_eq!(reopened.config().archive_sources, ["harness"]);
+}
+
+#[test]
+fn active_archiving_validates_selected_sources_and_rejects_empty_or_unknown_sources() {
+    let fixture = fixture();
+    let mut store =
+        SettingsStore::load(fixture.path(), fixture.path().join("missing-codex")).unwrap();
+    let mut empty = update_input(&store);
+    empty.archive_enabled = true;
+    empty.archive_sources.clear();
+    assert!(store.update(empty).unwrap_err().contains("至少选择"));
+    let mut unknown = update_input(&store);
+    unknown.archive_sources = vec!["other".into()];
+    assert!(store.update(unknown).unwrap_err().contains("归档来源"));
+    let mut missing = update_input(&store);
+    missing.archive_enabled = true;
+    assert!(store
+        .update(missing)
+        .unwrap_err()
+        .contains("Codex 会话目录不存在"));
+    let mut missing = update_input(&store);
+    missing.archive_enabled = true;
+    missing.archive_sources = vec!["harness".into()];
+    missing.harness_directory = fixture.path().join("missing-harness").display().to_string();
+    assert!(store
+        .update(missing)
+        .unwrap_err()
+        .contains("DeepSeek Harness 数据目录不存在"));
+    assert_eq!(store.config().archive_sources, ["codex"]);
+    assert!(!store.config().archive_enabled);
+}
+
+#[test]
+fn archive_sources_are_deduplicated_but_an_explicit_disabled_empty_selection_is_preserved() {
+    let fixture = fixture();
+    let mut store = SettingsStore::load(fixture.path(), fixture.path().join("codex")).unwrap();
+    let mut input = update_input(&store);
+    input.archive_sources = vec!["harness".into(), "codex".into(), "harness".into()];
+    assert_eq!(
+        store.update(input).unwrap().archive_sources,
+        ["codex", "harness"]
+    );
+    let mut input = update_input(&store);
+    input.archive_sources.clear();
+    assert!(store.update(input).unwrap().archive_sources.is_empty());
+}
+
+#[test]
+fn portable_import_cannot_enable_archiving_without_a_selected_source() {
+    let fixture = fixture();
+    let mut store = SettingsStore::load(fixture.path(), fixture.path().join("codex")).unwrap();
+    let mut input = update_input(&store);
+    input.archive_sources.clear();
+    store.update(input).unwrap();
+    let mut imported = store.config().clone();
+    imported.archive_enabled = true;
+    assert!(store
+        .apply_import(imported)
+        .unwrap_err()
+        .contains("至少选择"));
+    assert!(!store.config().archive_enabled);
+    assert!(store.config().archive_sources.is_empty());
+}
+
 fn fixture() -> tempfile::TempDir {
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dev-data/test-runs");
     fs::create_dir_all(&directory).unwrap();
@@ -95,6 +204,8 @@ fn update_input(store: &SettingsStore) -> UpdateSettings {
             api_key: None,
         },
         codex_directory: current.codex_directory.clone(),
+        harness_directory: current.harness_directory.clone(),
+        archive_sources: current.archive_sources.clone(),
         archive_enabled: false,
         run_in_background: false,
     }

@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronDown, ChevronRight, FileText, Focus, GitBranch, Link2, Maximize2, Minus, Plus, RefreshCw, Search, Settings2, X } from 'lucide-vue-next';
 import type { MemoryGraph, MemoryRecord, Repository } from '../types';
 import { memoryRead } from '../api';
-import { REPOSITORY_COLORS, buildGraphIndex, layoutGraph, scopeGraph } from '../graph';
-import type { GraphRange } from '../graph';
+import { REPOSITORY_COLORS, STAR_MAP_MIN_ZOOM, STAR_MAP_MAX_ZOOM, buildGraphIndex, graphPanelMaxHeight, layoutGraph, scopeGraph } from '../graph';
+import type { GraphLabelDensity, GraphRange } from '../graph';
 import { StarMapRenderer } from '../graph-renderer';
 import { themeTokens } from '../theme';
 import MarkdownView from './MarkdownView.vue';
@@ -18,6 +18,8 @@ const props = withDefaults(defineProps<{
 }>(), { initialMemoryId: null, active: true });
 const emit = defineEmits<{ 'open-memory': [id: string] }>();
 const canvas = ref<HTMLCanvasElement>();
+const topbar = ref<HTMLElement>();
+const panelMaxHeight = ref(280);
 const searchField = ref<HTMLInputElement>();
 const detailPanel = ref<HTMLElement>();
 const settingsButton = ref<HTMLButtonElement>();
@@ -30,7 +32,7 @@ const settingsOpen = ref(false);
 const showIsolated = ref(true);
 const colorByRepository = ref(true);
 const showLinks = ref(true);
-const labelDensity = ref<'低' | '标准' | '高'>('标准');
+const labelDensity = ref<GraphLabelDensity>('标准');
 const nodeSize = ref(100);
 const lineWidth = ref(100);
 const zoom = ref(100);
@@ -309,8 +311,14 @@ onMounted(() => {
   renderer = new StarMapRenderer(canvas.value!);
   renderer.setActive(props.active);
   canvas.value!.addEventListener('wheel', onWheel, { passive: false });
-  resizeObserver = new ResizeObserver(() => renderer?.requestDraw());
+  resizeObserver = new ResizeObserver(() => {
+    const bounds = canvas.value!.getBoundingClientRect();
+    const top = topbar.value!.getBoundingClientRect().bottom - bounds.top + 16;
+    panelMaxHeight.value = graphPanelMaxHeight(bounds.height, top);
+    renderer?.setTopInset(top);
+  });
   resizeObserver.observe(canvas.value!);
+  resizeObserver.observe(topbar.value!);
   window.addEventListener('aimemory-theme', refreshTheme);
   updateScene();
   updateAppearance();
@@ -326,33 +334,35 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="star-map" :style="starTheme" data-testid="memory-star-map" @keydown="escape">
+  <section class="star-map" :style="[starTheme, { '--star-panel-max-height': panelMaxHeight + 'px' }]" data-testid="memory-star-map" @keydown="escape">
     <canvas ref="canvas" class="star-canvas" :class="{ dragging, 'node-hovered': hoveredId }" data-testid="star-canvas" :data-range="range" :data-center-id="scoped.centerId" :data-selected-id="selectedId" tabindex="0" aria-label="记忆星图，左键拖动旋转，中键拖动平移，滚轮或加减键缩放，方向键旋转，Home 复位，Escape 关闭详情并返回全景。可通过搜索选择记忆。" aria-describedby="star-map-status" @pointerdown="pointerDown" @pointermove="pointerMove" @pointerup="pointerUp" @pointercancel="pointerCancel" @pointerleave="hoveredId = null" @keydown="canvasKeydown" />
-    <header class="star-heading">
-      <div class="star-heading-line"><h1>记忆星图</h1><p class="star-total"><strong>{{ index.nodes.length.toLocaleString() }}</strong> 记忆<span>·</span><strong>{{ index.edges.length.toLocaleString() }}</strong> 关联</p></div>
-      <div class="star-legend" aria-label="仓库图例"><span v-for="repo in legend" :key="repo.id" :title="repo.name"><i class="star-dot" :style="{ background: repo.color }" />{{ repo.name }}<small>{{ repo.count.toLocaleString() }}</small></span></div>
-    </header>
-    <div class="star-tools">
-      <div class="star-search" @focusout="event => { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) searchOpen = false; }">
-        <Search :size="17" aria-hidden="true" />
-        <input ref="searchField" v-model="search" type="search" role="combobox" aria-autocomplete="list" aria-controls="star-search-results" :aria-expanded="showMatches" :aria-activedescendant="searchMatchIndex >= 0 && showMatches ? `star-match-${searchMatchIndex}` : undefined" aria-label="搜索记忆标题、ID、摘要或标签" placeholder="搜索记忆" autocomplete="off" data-testid="star-search" @focus="searchOpen = true" @keydown="searchKeydown" />
-        <span v-if="search.trim()" class="star-search-count" data-testid="star-search-count" aria-live="polite">{{ allMatches.length }}</span>
-        <button v-if="search" type="button" class="icon-button star-search-clear" aria-label="清空星图搜索" data-testid="star-search-clear" @click="clearSearch"><X :size="14" /></button>
-        <div v-if="showMatches" id="star-search-results" class="star-matches" role="listbox" aria-label="匹配的记忆">
-          <div class="star-matches-heading">{{ allMatches.length }} 条命中<span v-if="allMatches.length > 12">展示前 12 条</span></div>
-          <button v-for="(memory, position) in matches" :id="`star-match-${position}`" :key="memory.id" type="button" role="option" :aria-selected="position === searchMatchIndex" :class="{ active: position === searchMatchIndex }" :data-memory-id="memory.id" @click="selectSearchMatch(memory.id)"><span>{{ memory.title }}</span><small>{{ repositoryById.get(memory.repositoryId)?.name ?? memory.repositoryId }} · {{ memory.id }}<em v-if="!visibleIds.has(memory.id)">当前范围外</em></small></button>
-          <p v-if="!matches.length">没有匹配的记忆</p>
+    <div ref="topbar" class="star-topbar">
+      <header class="star-heading">
+        <div class="star-heading-line"><h1>记忆星图</h1><p class="star-total"><strong>{{ index.nodes.length.toLocaleString() }}</strong> 记忆<span>·</span><strong>{{ index.edges.length.toLocaleString() }}</strong> 关联</p></div>
+        <div class="star-legend" aria-label="仓库图例"><span v-for="repo in legend" :key="repo.id" :title="repo.name"><i class="star-dot" :style="{ background: repo.color }" /><span class="star-repository-name">{{ repo.name }}</span><small>{{ repo.count.toLocaleString() }}</small></span></div>
+        <div v-if="range > 0" class="star-context"><button class="text-button" @click="showOverview"><Maximize2 :size="14" />返回全景</button><span>当前记忆及直接关联</span></div>
+      </header>
+      <div class="star-tools">
+        <div class="star-search" @focusout="event => { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) searchOpen = false; }">
+          <Search :size="17" aria-hidden="true" />
+          <input ref="searchField" v-model="search" type="search" role="combobox" aria-autocomplete="list" aria-controls="star-search-results" :aria-expanded="showMatches" :aria-activedescendant="searchMatchIndex >= 0 && showMatches ? `star-match-${searchMatchIndex}` : undefined" aria-label="搜索记忆标题、ID、摘要或标签" placeholder="搜索记忆" autocomplete="off" data-testid="star-search" @focus="searchOpen = true" @keydown="searchKeydown" />
+          <span v-if="search.trim()" class="star-search-count" data-testid="star-search-count" aria-live="polite">{{ allMatches.length }}</span>
+          <button v-if="search" type="button" class="icon-button star-search-clear" aria-label="清空星图搜索" data-testid="star-search-clear" @click="clearSearch"><X :size="14" /></button>
+          <div v-if="showMatches" id="star-search-results" class="star-matches" role="listbox" aria-label="匹配的记忆">
+            <div class="star-matches-heading">{{ allMatches.length }} 条命中<span v-if="allMatches.length > 12">展示前 12 条</span></div>
+            <button v-for="(memory, position) in matches" :id="`star-match-${position}`" :key="memory.id" type="button" role="option" :aria-selected="position === searchMatchIndex" :class="{ active: position === searchMatchIndex }" :data-memory-id="memory.id" @click="selectSearchMatch(memory.id)"><span>{{ memory.title }}</span><small>{{ repositoryById.get(memory.repositoryId)?.name ?? memory.repositoryId }} · {{ memory.id }}<em v-if="!visibleIds.has(memory.id)">当前范围外</em></small></button>
+            <p v-if="!matches.length">没有匹配的记忆</p>
+          </div>
         </div>
+        <button ref="settingsButton" class="button star-settings-button" :class="{ active: settingsOpen }" :aria-expanded="settingsOpen" aria-controls="star-settings" data-testid="star-settings-toggle" @click="settingsOpen = !settingsOpen; searchOpen = false"><Settings2 :size="17" aria-hidden="true" />图谱设置<ChevronDown :size="14" aria-hidden="true" /></button>
       </div>
-      <button ref="settingsButton" class="button star-settings-button" :class="{ active: settingsOpen }" :aria-expanded="settingsOpen" aria-controls="star-settings" data-testid="star-settings-toggle" @click="settingsOpen = !settingsOpen; searchOpen = false"><Settings2 :size="17" aria-hidden="true" />图谱设置<ChevronDown :size="14" aria-hidden="true" /></button>
     </div>
-    <div v-if="range > 0" class="star-context"><button class="text-button" @click="showOverview"><Maximize2 :size="14" />返回全景</button><span>当前记忆及直接关联</span></div>
 
     <aside v-if="settingsOpen" id="star-settings" class="star-panel star-settings" aria-label="图谱设置" data-testid="star-settings" @wheel.stop>
       <div class="star-panel-heading"><h2>图谱设置</h2><button class="icon-button" aria-label="关闭图谱设置" @click="settingsOpen = false; settingsButton?.focus()"><X :size="17" /></button></div>
       <section class="star-setting-section"><h3>筛选</h3><div class="star-option"><span>仓库范围</span><AppSelect :model-value="repositoryId ?? ''" :options="repositoryOptions" aria-label="筛选仓库" data-testid="star-repository-filter" @update:model-value="changeRepository" /></div><label class="star-option"><span>显示孤立记忆</span><input v-model="showIsolated" type="checkbox" role="switch" data-testid="star-isolated" /></label></section>
       <section class="star-setting-section"><h3>分组</h3><label class="star-option"><span>按仓库着色</span><span class="star-color-toggle"><i v-for="color in [...colors.values()].slice(0, 4)" :key="color" :style="{ background: color }" /><input v-model="colorByRepository" type="checkbox" role="switch" /></span></label></section>
-      <section class="star-setting-section"><h3>显示</h3><label class="star-option"><span>关系线</span><input v-model="showLinks" type="checkbox" role="switch" data-testid="star-show-links" /></label><div class="star-option"><span>标签密度</span><AppSelect :model-value="labelDensity" :options="labelOptions" aria-label="标签密度" @update:model-value="value => { labelDensity = value as '低' | '标准' | '高'; }" /></div><label class="star-slider"><span>节点大小</span><output>{{ nodeSize }}%</output><input v-model.number="nodeSize" type="range" min="50" max="180" step="10" aria-label="节点大小" /></label><label class="star-slider" :class="{ disabled: !showLinks }"><span>连线粗细</span><output>{{ lineWidth }}%</output><input v-model.number="lineWidth" type="range" min="50" max="180" step="10" :disabled="!showLinks" aria-label="连线粗细" /></label></section>
+      <section class="star-setting-section"><h3>显示</h3><label class="star-option"><span>关系线</span><input v-model="showLinks" type="checkbox" role="switch" data-testid="star-show-links" /></label><div class="star-option"><span>标签密度</span><AppSelect :model-value="labelDensity" :options="labelOptions" aria-label="标签密度" @update:model-value="value => { labelDensity = value as GraphLabelDensity; }" /></div><label class="star-slider"><span>节点大小</span><output>{{ nodeSize }}%</output><input v-model.number="nodeSize" type="range" min="50" max="180" step="10" aria-label="节点大小" /></label><label class="star-slider" :class="{ disabled: !showLinks }"><span>连线粗细</span><output>{{ lineWidth }}%</output><input v-model.number="lineWidth" type="range" min="50" max="180" step="10" :disabled="!showLinks" aria-label="连线粗细" /></label></section>
       <footer><button class="text-button" @click="resetSettings"><RefreshCw :size="15" />恢复默认</button></footer>
     </aside>
 
@@ -371,7 +381,7 @@ onBeforeUnmount(() => {
 
     <div v-if="!graph.nodes.length" class="star-empty"><GitBranch :size="32" /><h2>还没有可显示的记忆</h2></div>
     <div v-else-if="!scoped.nodes.length" class="star-empty"><Focus :size="30" /><h2>当前范围没有记忆</h2></div>
-    <div class="star-camera"><button class="icon-button" aria-label="缩小星图" :disabled="zoom <= 35" @click="adjustZoom(1 / 1.2)"><Minus :size="17" /></button><output aria-label="缩放比例">{{ zoom }}%</output><button class="icon-button" aria-label="放大星图" :disabled="zoom >= 400" @click="adjustZoom(1.2)"><Plus :size="17" /></button><span /><button class="icon-button" aria-label="重置星图视角" title="重置视角" @click="resetCamera"><Maximize2 :size="17" /></button></div>
+    <div class="star-camera"><button class="icon-button" aria-label="缩小星图" :disabled="zoom <= STAR_MAP_MIN_ZOOM * 100" @click="adjustZoom(1 / 1.2)"><Minus :size="17" /></button><output aria-label="缩放比例">{{ zoom }}%</output><button class="icon-button" aria-label="放大星图" :disabled="zoom >= STAR_MAP_MAX_ZOOM * 100" @click="adjustZoom(1.2)"><Plus :size="17" /></button><span /><button class="icon-button" aria-label="重置星图视角" title="重置视角" @click="resetCamera"><Maximize2 :size="17" /></button></div>
     <footer class="star-footer"><div id="star-map-status" class="star-count" role="status" aria-live="polite" data-testid="star-range-status"><strong>{{ range ? '关联视图' : '全景' }}</strong><span>{{ scoped.nodes.length.toLocaleString() }} 记忆 · {{ scoped.edges.length.toLocaleString() }} 关联</span></div><span class="star-gesture">左键旋转 · 中键平移 · 滚轮缩放 · 点击阅读</span><span class="star-token">本地浏览</span></footer>
     <span class="star-sr" aria-live="polite">{{ selectionStatus }}</span>
   </section>
@@ -385,17 +395,19 @@ onBeforeUnmount(() => {
 .star-map .button { color: var(--fg); background: #13233a; border-color: var(--line); }
 .star-map .button:hover { background: #1a304e; border-color: var(--accent-line); }
 .star-map .icon-button:hover, .star-map .text-button:hover { background: var(--hover); color: var(--fg); }
-.star-heading { position: absolute; z-index: 2; left: 22px; top: 22px; width: calc(100% - 425px); max-width: 640px; pointer-events: none; }
+.star-topbar { position: absolute; z-index: 4; left: 22px; right: 22px; top: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px; pointer-events: none; }
+.star-heading { min-width: 0; max-width: 640px; }
 .star-heading-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
 .star-heading h1 { font-size: 19px; line-height: 1.4; font-weight: 600; letter-spacing: -.35px; white-space: nowrap; }
 .star-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; color: var(--faint); font-size: 11px; line-height: 1.6; font-variant-numeric: tabular-nums; }
 .star-total strong { color: #becde2; font-weight: 500; }
 .star-total > span { margin: 0 3px; color: #536780; }
-.star-legend { display: flex; flex-wrap: nowrap; gap: 5px 13px; max-height: 32px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; margin-top: 12px; padding: 7px 10px; width: fit-content; max-width: 100%; background: #0e1b2b9c; border: 1px solid #2539518a; border-radius: 7px; font-size: 10px; line-height: 1.5; color: var(--muted); pointer-events: auto; backdrop-filter: blur(12px); }
+.star-legend { display: flex; flex-wrap: wrap; gap: 5px 13px; margin-top: 12px; padding: 7px 10px; width: fit-content; max-width: 100%; background: #0e1b2b9c; border: 1px solid #2539518a; border-radius: 7px; font-size: 10px; line-height: 1.5; color: var(--muted); pointer-events: auto; backdrop-filter: blur(12px); }
 .star-legend:empty { display: none; }
-.star-legend > span { display: inline-flex; gap: 6px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
-.star-legend small { font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.star-tools { position: absolute; right: 22px; top: 20px; display: flex; gap: 8px; z-index: 4; }
+.star-legend > span { display: inline-flex; flex: 0 1 auto; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
+.star-repository-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.star-legend small { flex-shrink: 0; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.star-tools { display: flex; gap: 8px; min-width: 0; pointer-events: auto; }
 .star-search { position: relative; display: flex; align-items: center; gap: 8px; width: 236px; height: 36px; border: 1px solid #2a3e59; border-radius: 8px; background: #0e1a2de8; padding: 0 10px; color: var(--muted); backdrop-filter: blur(14px); }
 .star-search:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 2px var(--soft); }
 .star-search input { min-width: 0; flex: 1; width: 100%; height: 100%; padding: 0; background: transparent; color: var(--fg); border: 0; outline: 0; font-size: 12px; }
@@ -403,7 +415,7 @@ onBeforeUnmount(() => {
 .star-search input::-webkit-search-cancel-button { appearance: none; }
 .star-search-count { font: 10px Menlo, Consolas, monospace; color: var(--accent-text); }
 .star-search-clear { width: 21px; height: 23px; flex-shrink: 0; }
-.star-map .star-settings-button { min-height: 36px; padding: 7px 10px; gap: 7px; font-size: 11px; background: #0e1a2de8; backdrop-filter: blur(14px); }
+.star-map .star-settings-button { flex-shrink: 0; min-height: 36px; padding: 7px 10px; gap: 7px; font-size: 11px; background: #0e1a2de8; backdrop-filter: blur(14px); }
 .star-settings-button > svg:last-child { margin-left: 2px; }
 .star-map .star-settings-button.active { background: var(--soft); border-color: var(--accent-line); color: var(--accent-text); }
 .star-matches { position: absolute; z-index: 8; left: -1px; right: -1px; top: 42px; max-height: min(340px, calc(100vh - 250px)); overflow: auto; padding: 5px; background: #101d30f5; border: 1px solid #2c4260; border-radius: 8px; box-shadow: 0 12px 32px #0005; backdrop-filter: blur(16px); }
@@ -415,7 +427,7 @@ onBeforeUnmount(() => {
 .star-matches small { color: var(--faint); font: 9px/1.7 Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 .star-matches em { font-size: 9px; font-style: normal; line-height: 1.7; color: var(--muted); margin-left: 8px; }
 .star-matches p { color: var(--muted); font-size: 12px; padding: 14px 8px; line-height: 1.7; }
-.star-context { position: absolute; top: 117px; left: 22px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; max-width: calc(100% - 44px); padding: 4px 9px 4px 4px; border: 1px solid #2a3e59; border-radius: 8px; background: #0e1a2de8; color: var(--faint); font-size: 10px; backdrop-filter: blur(14px); }
+.star-context { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; width: fit-content; max-width: 100%; margin-top: 12px; pointer-events: auto; padding: 4px 9px 4px 4px; border: 1px solid #2a3e59; border-radius: 8px; background: #0e1a2de8; color: var(--faint); font-size: 10px; backdrop-filter: blur(14px); }
 .star-context .text-button { color: var(--accent-text); font-size: 11px; }
 .star-panel { position: absolute; z-index: 3; right: 22px; top: 72px; width: 324px; max-height: calc(100% - 138px); overflow-y: auto; overscroll-behavior: contain; background: #0e1a2df0; color: var(--fg); border: 1px solid #2c405b; border-radius: 10px; box-shadow: 0 12px 40px #0004; backdrop-filter: blur(18px); scrollbar-color: #344a68 transparent; }
 .star-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -492,12 +504,11 @@ onBeforeUnmount(() => {
   .star-gesture, .star-token { display: none; }
 }
 @container star-map (max-width: 760px) {
-  .star-heading { left: 18px; top: 18px; width: calc(100% - 36px); }
-  .star-tools { left: 18px; right: 18px; top: 100px; gap: 8px; }
+  .star-topbar { left: 18px; right: 18px; top: 18px; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .star-heading { max-width: none; }
   .star-search { flex: 1; width: auto; min-width: 0; }
   .star-settings-button > svg:last-child { display: none; }
-  .star-panel { left: 18px; right: 18px; top: auto; bottom: 63px; width: auto; max-height: min(42%, 280px); }
-  .star-context { top: 149px; left: 18px; max-width: calc(100% - 36px); }
+  .star-panel { left: 18px; right: 18px; top: auto; bottom: 63px; width: auto; max-height: var(--star-panel-max-height); }
   .star-context > span { display: none; }
   .star-camera { bottom: 14px; right: 18px; }
   .star-footer { left: 18px; right: 205px; bottom: 14px; }

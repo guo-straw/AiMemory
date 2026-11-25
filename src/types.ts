@@ -91,10 +91,14 @@ export interface ServiceInput {
   apiKey?: string;
 }
 
+export type ClientSource = 'codex' | 'harness';
+
 export interface AppSettings {
   chat: ServiceConfig;
   embedding: ServiceConfig;
   codexDirectory: string;
+  harnessDirectory: string;
+  archiveSources: ClientSource[];
   archiveEnabled: boolean;
   archiveStartedAt: string | null;
   runInBackground: boolean;
@@ -104,6 +108,8 @@ export interface SettingsInput {
   chat: ServiceInput;
   embedding: ServiceInput;
   codexDirectory: string;
+  harnessDirectory: string;
+  archiveSources: ClientSource[];
   archiveEnabled: boolean;
   runInBackground: boolean;
 }
@@ -117,6 +123,7 @@ export interface ConnectionTest {
 }
 
 export interface ArchiveTurn {
+  client: ClientSource;
   sourceId: string;
   repository: string;
   sessionId: string;

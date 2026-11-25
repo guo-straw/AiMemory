@@ -56,6 +56,10 @@ pub struct AppConfig {
     pub chat: ServiceConfig,
     pub embedding: ServiceConfig,
     pub codex_directory: String,
+    #[serde(default = "default_harness_directory_value")]
+    pub harness_directory: String,
+    #[serde(default = "default_archive_sources")]
+    pub archive_sources: Vec<String>,
     #[serde(default)]
     pub archive_enabled: bool,
     #[serde(default)]
@@ -65,6 +69,22 @@ pub struct AppConfig {
 }
 
 pub type SettingsView = AppConfig;
+
+fn default_harness_directory_value() -> String {
+    crate::harness::default_harness_directory()
+        .display()
+        .to_string()
+}
+
+pub fn default_archive_sources() -> Vec<String> {
+    vec!["codex".into()]
+}
+
+impl AppConfig {
+    pub fn archives(&self, client: &str) -> bool {
+        self.archive_enabled && self.archive_sources.iter().any(|source| source == client)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -89,6 +109,10 @@ pub struct UpdateSettings {
     pub chat: ServiceInput,
     pub embedding: ServiceInput,
     pub codex_directory: String,
+    #[serde(default = "default_harness_directory_value")]
+    pub harness_directory: String,
+    #[serde(default = "default_archive_sources")]
+    pub archive_sources: Vec<String>,
     pub archive_enabled: bool,
     pub run_in_background: bool,
 }
@@ -129,6 +153,8 @@ impl SettingsStore {
                     has_api_key: false,
                 },
                 codex_directory: default_codex_dir.display().to_string(),
+                harness_directory: default_harness_directory_value(),
+                archive_sources: default_archive_sources(),
                 archive_enabled: false,
                 archive_started_at: None,
                 run_in_background: false,
@@ -173,16 +199,21 @@ impl SettingsStore {
             }
         }
         let codex_directory = input.codex_directory.trim();
-        if codex_directory.is_empty() {
-            return Err("请选择 Codex 会话目录".into());
-        }
-        if input.archive_enabled && !Path::new(codex_directory).is_dir() {
-            return Err("Codex 会话目录不存在，请选择 sessions 目录".into());
-        }
+        let harness_directory = input.harness_directory.trim();
+        let archive_sources = validate_archive_settings(
+            codex_directory,
+            harness_directory,
+            &input.archive_sources,
+            input.archive_enabled,
+        )?;
         let mut next = AppConfig {
             chat,
             embedding,
             codex_directory: codex_directory.into(),
+            harness_directory: crate::harness::root_directory(Path::new(harness_directory))
+                .display()
+                .to_string(),
+            archive_sources,
             archive_enabled: input.archive_enabled,
             archive_started_at: self.config.archive_started_at.clone(),
             run_in_background: input.run_in_background,
@@ -237,7 +268,13 @@ impl SettingsStore {
         Ok(())
     }
 
-    pub(crate) fn apply_import(&mut self, next: AppConfig) -> Result<SettingsView, String> {
+    pub(crate) fn apply_import(&mut self, mut next: AppConfig) -> Result<SettingsView, String> {
+        next.archive_sources = validate_archive_settings(
+            &next.codex_directory,
+            &next.harness_directory,
+            &next.archive_sources,
+            next.archive_enabled,
+        )?;
         write_atomic(
             &self.path,
             &serde_json::to_vec_pretty(&next).map_err(|e| e.to_string())?,
@@ -324,6 +361,45 @@ impl SettingsStore {
     fn write_key(&self, kind: ServiceKind, key: Option<&str>) -> Result<(), String> {
         self.keys.write(kind.account(), key)
     }
+}
+
+fn validate_archive_settings(
+    codex_directory: &str,
+    harness_directory: &str,
+    selected: &[String],
+    enabled: bool,
+) -> Result<Vec<String>, String> {
+    if codex_directory.is_empty() {
+        return Err("请选择 Codex 会话目录".into());
+    }
+    if harness_directory.is_empty() {
+        return Err("请选择 DeepSeek Harness 数据目录".into());
+    }
+    if selected
+        .iter()
+        .any(|source| !matches!(source.as_str(), "codex" | "harness"))
+    {
+        return Err("自动归档来源只能选择 Codex 或 DeepSeek Harness".into());
+    }
+    let sources: Vec<String> = ["codex", "harness"]
+        .into_iter()
+        .filter(|source| selected.iter().any(|selected| selected == source))
+        .map(str::to_string)
+        .collect();
+    if enabled {
+        if sources.is_empty() {
+            return Err("请至少选择一个自动归档来源".into());
+        }
+        if sources.iter().any(|source| source == "codex") && !Path::new(codex_directory).is_dir() {
+            return Err("Codex 会话目录不存在，请选择 sessions 目录".into());
+        }
+        if sources.iter().any(|source| source == "harness")
+            && !Path::new(harness_directory).is_dir()
+        {
+            return Err("DeepSeek Harness 数据目录不存在，请选择 .dsh 或 sessions 目录".into());
+        }
+    }
+    Ok(sources)
 }
 
 pub(crate) fn validate_service(

@@ -1,5 +1,8 @@
 use super::*;
 use serde_json::json;
+
+#[path = "harness_tests.rs"]
+mod harness;
 use std::{fs, io::Write};
 
 fn at(seconds: i64) -> String {
@@ -49,6 +52,8 @@ fn setup() -> (tempfile::TempDir, Store, PathBuf) {
 fn filters(home: &Path) -> Filters {
     Filters {
         source: store::source_id(home),
+        harness_source: String::new(),
+        client: None,
         start: 0,
         end: 4102444800000,
         project: None,
@@ -57,13 +62,20 @@ fn filters(home: &Path) -> Filters {
         buckets: vec![],
     }
 }
+fn roots(home: &Path) -> Directories {
+    Directories {
+        codex: home.to_string_lossy().into_owned(),
+        harness: home
+            .parent()
+            .unwrap()
+            .join("harness")
+            .to_string_lossy()
+            .into_owned(),
+    }
+}
 fn overview(store: &Store, home: &Path) -> Overview {
     store
-        .overview(
-            &filters(home),
-            home.to_str().unwrap(),
-            ScanStatus::default(),
-        )
+        .overview(&filters(home), &roots(home), ScanStatus::default())
         .unwrap()
 }
 fn scan(store: &mut Store, home: &Path) {
@@ -178,9 +190,9 @@ fn official_prices_follow_tier_and_the_full_input_context_threshold() {
     let result = overview(&store, &home);
     assert_eq!(
         (result.summary.records, result.summary.priced_records),
-        (5, 3)
+        (5, 4)
     );
-    assert!((result.summary.cost - (0.041 + 0.077004 + 0.078)).abs() < 1e-10);
+    assert!((result.summary.cost - (0.041 + 0.077004 + 0.078 + 0.00148)).abs() < 1e-10);
     let detail = store.detail(&filters(&home), "standard", 0).unwrap();
     assert_eq!(detail.cost_groups.len(), 2);
     assert!((detail.cost_parts.iter().sum::<f64>() - detail.session.summary.cost).abs() < 1e-10);
@@ -528,7 +540,9 @@ fn model_project_time_and_source_filters_are_consistent() {
         end: 4102444800000,
         label: "all".into(),
     }];
-    let a = store.overview(&f, "", ScanStatus::default()).unwrap();
+    let a = store
+        .overview(&f, &roots(&home), ScanStatus::default())
+        .unwrap();
     let page = store.sessions(&f, 0, "recent").unwrap();
     let detail = store.detail(&f, "a", 0).unwrap();
     assert_eq!(a.summary.input, 1000);
@@ -692,7 +706,8 @@ async fn browser_bridge() {
     use std::sync::Arc;
     struct Bridge {
         store: Store,
-        home: PathBuf,
+        directories: Directories,
+        source_views: PathBuf,
         stop: Arc<tokio::sync::Notify>,
     }
     async fn invoke(
@@ -707,13 +722,14 @@ async fn browser_bridge() {
                 json!({"start":0,"end":4102444800000i64,"project":null,"model":null,"role":null}),
             ))
             .map_err(|e| e.to_string())?;
-            f.source = store::source_id(&bridge.home);
+            f.source = store::source_id(Path::new(&bridge.directories.codex));
+            f.harness_source = store::harness_source_id(Path::new(&bridge.directories.harness));
             f.validate()?;
             let page = args["page"].as_u64().unwrap_or(0) as u32;
             let value = match command.as_str() {
                 "usage_overview" => serde_json::to_value(bridge.store.overview(
                     &f,
-                    bridge.home.to_str().unwrap(),
+                    &bridge.directories,
                     ScanStatus {
                         last_synced_at: bridge.store.last_synced()?,
                         ..Default::default()
@@ -733,9 +749,9 @@ async fn browser_bridge() {
                 )?)
                 .unwrap(),
                 "usage_scan" => {
-                    let home = bridge.home.clone();
-                    let errors = bridge.store.scan(
-                        &home,
+                    let directories = bridge.directories.clone();
+                    let errors = bridge.store.scan_sources(
+                        &directories,
                         args["full"].as_bool().unwrap_or(false),
                         |_, _| {},
                     )?;
@@ -762,11 +778,23 @@ async fn browser_bridge() {
                     bridge.store.save_prices(&prices)?;
                     Value::Null
                 }
-                "usage_issues" => serde_json::to_value(bridge.store.issues(&f.source)?).unwrap(),
+                "usage_issues" => {
+                    let client: Option<String> =
+                        serde_json::from_value(args.get("client").cloned().unwrap_or(Value::Null))
+                            .map_err(|e| e.to_string())?;
+                    validate_client(client.as_deref())?;
+                    serde_json::to_value(bridge.store.issues(
+                        &f.source,
+                        &f.harness_source,
+                        client.as_deref(),
+                    )?)
+                    .unwrap()
+                }
                 "usage_open_source" => {
-                    bridge
-                        .store
-                        .source_path(args["recordId"].as_str().ok_or("缺少来源")?)?;
+                    bridge.store.source_view(
+                        args["recordId"].as_str().ok_or("缺少来源")?,
+                        &bridge.source_views,
+                    )?;
                     Value::Null
                 }
                 "usage_export" => {
@@ -799,9 +827,18 @@ async fn browser_bridge() {
         .unwrap()
         .join("dev-data/usage-acceptance");
     fs::create_dir_all(&directory).unwrap();
-    let home = crate::codex::default_codex_directory();
+    let directories = Directories {
+        codex: crate::codex::default_codex_directory()
+            .to_string_lossy()
+            .into_owned(),
+        harness: std::env::var_os("AIMEMORY_HARNESS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(crate::harness::default_harness_directory)
+            .to_string_lossy()
+            .into_owned(),
+    };
     let mut store = Store::open(&directory.join("usage.sqlite")).unwrap();
-    let errors = store.scan(&home, true, |_, _| {}).unwrap();
+    let errors = store.scan_sources(&directories, true, |_, _| {}).unwrap();
     assert!(errors.is_empty(), "{errors:?}");
     store
         .save_preferences(&Preferences {
@@ -812,7 +849,8 @@ async fn browser_bridge() {
     let stop = Arc::new(tokio::sync::Notify::new());
     let state = Arc::new(Mutex::new(Bridge {
         store,
-        home,
+        directories,
+        source_views: directory.join("usage-sources"),
         stop: stop.clone(),
     }));
     let app = Router::new()

@@ -92,6 +92,10 @@ export async function chooseCodexDirectory(): Promise<string | null> {
   return open({ directory: true, multiple: false, title: '选择 Codex 数据目录（包含 sessions）' });
 }
 
+export async function chooseHarnessDirectory(): Promise<string | null> {
+  return open({ directory: true, multiple: false, title: '选择 DeepSeek Harness 数据目录' });
+}
+
 export function semanticSearch(request: SearchRequest): Promise<SearchResponse> {
   return invoke('semantic_search', { request });
 }

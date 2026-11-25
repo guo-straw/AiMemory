@@ -25,6 +25,8 @@ fn state_in(directory: &Path, started_at: Option<String>) -> AppState {
             has_api_key: true,
         },
         codex_directory: codex.display().to_string(),
+        harness_directory: directory.join("harness").display().to_string(),
+        archive_sources: vec!["codex".into()],
         archive_enabled: false,
         archive_started_at: started_at.clone(),
         run_in_background: true,

@@ -301,6 +301,8 @@ async fn independent_holdout_and_real_archive_actions() {
                 api_key: None,
             },
             codex_directory: run.join("codex").display().to_string(),
+            harness_directory: run.join("harness").display().to_string(),
+            archive_sources: vec!["codex".into()],
             archive_enabled: false,
             run_in_background: false,
         })

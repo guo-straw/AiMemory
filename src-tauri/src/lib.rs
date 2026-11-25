@@ -3,6 +3,7 @@ pub mod code_context;
 pub mod codex;
 pub mod config;
 mod git;
+pub mod harness;
 #[cfg(test)]
 mod integration_tests;
 pub mod mcp;
@@ -333,7 +334,7 @@ fn settings_view(state: &AppState) -> Result<SettingsView, String> {
         .map_err(|error| error.to_string())?
         .as_ref()
     {
-        view.archive_started_at = pipeline.meta("enabled_at")?;
+        view.archive_started_at = archive::started_at(pipeline, &view)?;
     }
     Ok(view)
 }
@@ -371,17 +372,21 @@ fn apply_settings_change(state: &AppState, change: SettingsChange) -> Result<Set
         .map_err(|e| e.to_string())?
         .config()
         .clone();
-    let (archive_enabled, codex_directory) = match &change {
-        SettingsChange::Form(input) => (input.archive_enabled, input.codex_directory.clone()),
-        SettingsChange::Import(input) => (input.archive_enabled, previous.codex_directory.clone()),
-    };
-    let activation = if archive_enabled
-        && (!previous.archive_enabled || previous.codex_directory != codex_directory)
-    {
-        let root = state.workspace_root()?.ok_or("请先打开记忆库")?;
-        Some((root, archive::collect_baseline(&codex_directory)?))
-    } else {
+    let mut requested = previous.clone();
+    match &change {
+        SettingsChange::Form(input) => {
+            requested.archive_enabled = input.archive_enabled;
+            requested.archive_sources = input.archive_sources.clone();
+            requested.codex_directory = input.codex_directory.trim().into();
+            requested.harness_directory = input.harness_directory.trim().into();
+        }
+        SettingsChange::Import(input) => requested.archive_enabled = input.archive_enabled,
+    }
+    let baselines = archive::collect_activations(&previous, &requested)?;
+    let activation = if baselines.is_empty() {
         None
+    } else {
+        Some((state.workspace_root()?.ok_or("请先打开记忆库")?, baselines))
     };
     let config = {
         let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
@@ -402,11 +407,14 @@ fn apply_settings_change(state: &AppState, change: SettingsChange) -> Result<Set
                 settings.apply_import(next)?;
             }
         }
-        if let Some((root, cursors)) = activation {
+        if let Some((root, baselines)) = activation {
             let enabled_at =
                 chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
             state.with_workspace(&root, |_, pipeline| {
-                pipeline.baseline(&settings.config().codex_directory, &enabled_at, &cursors)
+                for baseline in &baselines {
+                    baseline.apply(pipeline, &enabled_at)?;
+                }
+                Ok(())
             })?;
             settings.set_archive_started_at(Some(enabled_at))?;
         }
@@ -624,7 +632,7 @@ async fn archive_status(state: State<'_, AppState>) -> Result<ArchiveStatus, Str
             ..ArchiveStatus::default()
         });
     };
-    let started_at = pipeline.meta("enabled_at")?;
+    let started_at = archive::started_at(pipeline, &config)?;
     pipeline.status(
         config.archive_enabled,
         started_at,

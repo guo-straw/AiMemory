@@ -162,6 +162,8 @@ async fn http_search_defaults_to_current_repository_five_summaries_and_reads_on_
                 api_key: None,
             },
             codex_directory: root.path().join("codex").display().to_string(),
+            harness_directory: root.path().join("harness").display().to_string(),
+            archive_sources: vec!["codex".into()],
             archive_enabled: false,
             run_in_background: false,
         })
@@ -583,6 +585,8 @@ async fn http_offline_groups_manual_conclusions_and_paged_source_evidence_share_
                 api_key: None,
             },
             codex_directory: root.path().join("codex").display().to_string(),
+            harness_directory: root.path().join("harness").display().to_string(),
+            archive_sources: vec!["codex".into()],
             archive_enabled: false,
             run_in_background: false,
         })

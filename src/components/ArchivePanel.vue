@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Activity, Archive, Clock3, GitBranch, RefreshCw } from 'lucide-vue-next';
-import type { ArchiveStatus, MemorySummary } from '../types';
+import type { ArchiveStatus, ClientSource, MemorySummary } from '../types';
+import { clientLabel } from '../usage';
 
-const props = defineProps<{ status: ArchiveStatus | null; memories: MemorySummary[]; readError: string; retrying: boolean; embedded?: boolean }>();
+const props = defineProps<{ status: ArchiveStatus | null; memories: MemorySummary[]; readError: string; retrying: boolean; embedded?: boolean; archiveSources?: ClientSource[] }>();
 const emit = defineEmits<{ retry: []; settings: []; openMemory: [id: string] }>();
+const archiveSourceLabel = computed(() => props.archiveSources === undefined ? 'Codex' : props.archiveSources.map(clientLabel).join('、') || '未选择来源');
 const usage = computed(() => [
   { label: '聊天输入', value: props.status?.chatInputTokens ?? 0, color: '#3566F0' },
   { label: '聊天输出', value: props.status?.chatOutputTokens ?? 0, color: '#92ACFB' },
@@ -38,8 +40,9 @@ function duration(value: number | null) { return value === null ? '—' : value 
     </div>
     <div class="archive-state-line">
       <span :class="{ enabled: status?.enabled }">
-        <i />{{ !status ? '正在读取归档状态…' : status.enabled ? 'Codex 自动归档已启用' : 'Codex 自动归档已暂停' }}
+        <i />{{ !status ? '正在读取归档状态…' : status.enabled ? '自动归档已启用' : '自动归档已暂停' }}
       </span>
+      <span data-testid="archive-sources">归档来源：{{ archiveSourceLabel }}</span>
       <span v-if="status?.startedAt">{{ dateTime(status.startedAt) }} 起</span>
       <span v-if="status?.scanning" class="scan-state">
         <RefreshCw :size="13" class="spinning" />正在检查新轮次
@@ -118,11 +121,11 @@ function duration(value: number | null) { return value === null ? '—' : value 
           </thead>
           <tbody>
             <template v-for="turn in status.recentTurns" :key="turn.sourceId">
-              <tr :data-source-id="turn.sourceId">
+              <tr :data-source-id="turn.sourceId" :data-client="turn.client ?? 'codex'">
                 <td><Clock3 :size="13" />{{ dateTime(turn.completedAt) }}</td>
                 <td class="archive-source">
                   <span><GitBranch :size="14" />{{ turn.repository }}</span>
-                  <small :title="`${turn.sessionId} · ${turn.turnId}`">{{ turn.sessionId.slice(0, 8) }} · {{ turn.turnId }}</small>
+                  <small :title="`${clientLabel(turn.client)} · ${turn.sessionId} · ${turn.turnId}`">{{ clientLabel(turn.client) }} · {{ turn.sessionId.slice(0, 8) }} · {{ turn.turnId }}</small>
                 </td>
                 <td>{{ turn.memoryCount }} 条</td>
                 <td class="archive-latency">

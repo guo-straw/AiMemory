@@ -1,6 +1,21 @@
 import type { MemoryGraph, MemorySummary } from './types';
 
 export type GraphRange = 0 | 1 | 2 | 3 | 4;
+export type GraphLabelDensity = '低' | '标准' | '高';
+
+export const STAR_MAP_MIN_ZOOM = .35;
+export const STAR_MAP_MAX_ZOOM = 16;
+
+export function graphPanelMaxHeight(height: number, topInset: number): number {
+  // Leave a map strip below wrapped legends while keeping the panel usable.
+  return Math.min(height * .42, 280, Math.max(100, height - topInset - 180));
+}
+
+export function graphLabelVisibility(zoom: number, density: GraphLabelDensity): number {
+  const fullZoom = density === '低' ? 4 : density === '高' ? 2 : 3;
+  if (fullZoom - zoom <= Number.EPSILON * fullZoom) return 1;
+  return Math.max(0, (zoom - .55) / (fullZoom - .55));
+}
 
 export const REPOSITORY_COLORS = ['#3566f0', '#318899', '#7564be', '#bd803d', '#ba5981', '#4b8e68'] as const;
 

@@ -1,6 +1,6 @@
 [package]
 name = "knowtrace"
-version = "0.2.5"
+version = "0.2.6"
 description = "KnowTrace · 知迹，本地项目记忆工作台"
 authors = ["KnowTrace"]
 edition = "2021"
@@ -37,6 +37,7 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 tokio-util = "0.7"
 pulldown-cmark = "0.13"
 dirs = "7"
+zstd = "0.13"
 
 [dev-dependencies]
 rmcp = { version = "3.11", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }

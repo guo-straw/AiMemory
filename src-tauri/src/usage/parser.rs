@@ -284,6 +284,7 @@ impl Cursor {
     ) -> UsageRecord {
         UsageRecord {
             id: format!("{}:{}:{}", source, self.thread, identity),
+            client: "codex".into(),
             thread_id: self.thread.clone(),
             turn_id: event
                 .pointer("/payload/turn_id")

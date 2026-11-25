@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { ChevronLeft, ChevronRight, ExternalLink, FileText } from 'lucide-vue-next';
 import UsageDrawer from './UsageDrawer.vue';
-import { cacheRate, compact, dateTime, modelLabel, money, number, projectLabel, referenceCost, roleLabel, totalTokens, usageDetail, usageOpenSource } from '../usage';
+import { cacheRate, clientLabel, compact, dateTime, modelLabel, money, number, projectLabel, referenceCost, roleLabel, totalTokens, usageDetail, usageOpenSource } from '../usage';
 import type { UsageCostGroup, UsageDetail as Detail, UsageFilters, UsageRecord } from '../usage';
 
 const props = defineProps<{ threadId: string; filters: UsageFilters }>();
@@ -53,7 +53,7 @@ onBeforeUnmount(() => { version++; });
 </script>
 
 <template>
-  <UsageDrawer title="会话详情" @close="emit('close')">
+  <UsageDrawer :title="data ? `${clientLabel(data.session.client)} · 会话详情` : '会话详情'" @close="emit('close')">
     <p v-if="error" class="usage-error" role="alert">{{ error }}</p>
     <p v-if="loading && !data" class="usage-muted">正在读取会话用量…</p>
     <template v-if="data && summary">
@@ -64,7 +64,7 @@ onBeforeUnmount(() => { version++; });
         <div><dt>模型</dt><dd>{{ modelLabel(data.session.model) }}</dd></div>
         <div><dt>用量记录</dt><dd>{{ number(summary.records) }} 条</dd></div>
         <div><dt>活动时间</dt><dd>{{ dateTime(data.session.firstAt) }}—{{ dateTime(data.session.lastAt) }}</dd></div>
-        <div><dt>来源</dt><dd>Codex 本地日志</dd></div>
+        <div><dt>来源</dt><dd>{{ clientLabel(data.session.client) }} 本地日志</dd></div>
       </dl>
       <button v-if="data.session.parentId" class="text-button parent-link" @click="parent">查看父会话 <ExternalLink :size="12" /></button>
 
@@ -85,7 +85,7 @@ onBeforeUnmount(() => { version++; });
           <div v-for="(label, index) in ['新增输入', '缓存读取', '缓存写入', '输出']" :key="label" class="detail-cost-row"><span>{{ label }}</span><strong>{{ money(data.costParts[index], 6) }}</strong></div>
           <details class="detail-price-calculation"><summary>查看单价与计算</summary><div v-for="group in data.costGroups" :key="`${group.price.model}/${group.price.provider}/${group.price.tier}`" class="detail-price-group"><strong>{{ group.price.model }} · {{ group.price.tier || '默认参考档位' }}</strong><p class="usage-note">{{ group.price.provider || '未记录供应商' }} · {{ group.price.source }} · 美元 / 百万 Tokens</p><div v-for="line in costLines(group)" :key="line.label" class="detail-price-line"><span>{{ line.label }} {{ number(line.tokens) }} × {{ money(line.price) }} / 1M</span><strong>{{ money(line.price === null ? null : line.tokens * line.price / 1e6, 6) }}</strong></div></div></details>
         </template>
-        <p class="usage-note">按配置价格估算 · {{ number(summary.pricedRecords) }} / {{ number(summary.records) }} 条已定价。参考费用不代表订阅扣费。</p>
+        <p class="usage-note">按配置价格估算 · {{ number(summary.pricedRecords) }} / {{ number(summary.records) }} 条已定价。参考费用不代表订阅扣费；没有可靠价格的记录保持未定价。</p>
       </section>
 
       <section class="detail-section">
@@ -95,12 +95,12 @@ onBeforeUnmount(() => { version++; });
           <div v-if="data.totalRecords > 100" class="usage-pagination"><button class="icon-button" :disabled="page === 0 || loading" aria-label="上一页记录" @click="page--"><ChevronLeft :size="16" /></button><span>{{ page + 1 }} / {{ Math.ceil(data.totalRecords / 100) }}</span><button class="icon-button" :disabled="(page + 1) * 100 >= data.totalRecords || loading" aria-label="下一页记录" @click="page++"><ChevronRight :size="16" /></button></div>
         </div>
         <dl v-else-if="selected" class="detail-source">
-          <div><dt>日志文件</dt><dd>{{ selected.file }}</dd></div><div><dt>记录位置</dt><dd>第 {{ selected.line }} 行</dd></div><div><dt>用量依据</dt><dd>{{ { response: '响应级用量', last: '日志单次用量', cumulative: '累计新增用量' }[selected.basis] ?? selected.basis }}</dd></div><div><dt>供应商标识</dt><dd>{{ selected.provider || '未记录' }}</dd></div><div><dt>服务档位</dt><dd>{{ selected.tier || '未记录，参考价格使用默认档位' }}</dd></div><div><dt>工作目录</dt><dd>{{ selected.project }}</dd></div><div><dt>线程 / 轮次</dt><dd>{{ selected.threadId }} / {{ selected.turnId || '未记录' }}</dd></div>
+          <div><dt>来源客户端</dt><dd>{{ clientLabel(selected.client) }}</dd></div><div><dt>日志文件</dt><dd>{{ selected.file }}</dd></div><div><dt>记录位置</dt><dd>{{ selected.client === 'harness' && selected.file.endsWith('.zstd') ? '解压后第' : '第' }} {{ selected.line }} 行</dd></div><div><dt>用量依据</dt><dd>{{ { response: '响应级用量', last: '日志单次用量', cumulative: '累计新增用量', 'harness-buckets': 'Harness 分项用量' }[selected.basis] ?? selected.basis }}</dd></div><div><dt>供应商标识</dt><dd>{{ selected.provider || '未记录' }}</dd></div><div><dt>服务档位</dt><dd>{{ selected.tier || '未记录，参考价格使用默认档位' }}</dd></div><div><dt>工作目录</dt><dd>{{ selected.project }}</dd></div><div><dt>线程 / 轮次</dt><dd>{{ selected.threadId }} / {{ selected.turnId || '未记录' }}</dd></div>
         </dl>
       </section>
       <section v-if="data.memories.length" class="detail-section"><h4>关联归档事项</h4><button v-for="memory in data.memories" :key="memory.id" class="detail-memory text-button" @click="emit('openMemory', memory.id)"><FileText :size="14" />{{ memory.title }}</button></section>
     </template>
-    <template #footer><span class="usage-note">仅统计本机已记录用量</span><button class="button" :disabled="!selected" @click="openSource"><ExternalLink :size="14" />打开本地日志</button></template>
+    <template #footer><span class="usage-note">仅统计本机已记录用量</span><button class="button" :disabled="!selected" @click="openSource"><ExternalLink :size="14" />{{ selected?.client === 'harness' && selected.file.endsWith('.zstd') ? '打开日志解压副本' : '打开本地日志' }}</button></template>
   </UsageDrawer>
 </template>
 

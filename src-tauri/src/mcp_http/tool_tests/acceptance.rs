@@ -305,6 +305,8 @@ async fn fixed_corpus_http_and_single_save_acceptance() {
                     api_key: None,
                 },
                 codex_directory: base.join("codex").display().to_string(),
+                harness_directory: base.join("harness").display().to_string(),
+                archive_sources: vec!["codex".into()],
                 archive_enabled: false,
                 run_in_background: false,
             })

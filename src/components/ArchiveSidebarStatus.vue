@@ -30,7 +30,7 @@ const destinations = { archive: '查看归档与用量', settings: '打开设置
         <component :is="icons[state.icon]" :size="18" />
       </span>
       <span class="status-text">
-        <span class="status-caption">Codex 自动归档</span>
+        <span class="status-caption">自动归档</span>
         <strong class="status-label" aria-live="polite" aria-atomic="true">{{ state.label }}</strong>
       </span>
       <ChevronRight class="status-chevron" :size="13" aria-hidden="true" />

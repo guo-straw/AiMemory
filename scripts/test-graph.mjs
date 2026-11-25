@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { buildGraphIndex, createWheelGesture, layoutGraph, scopeGraph, stepGraphRange } from '../src/graph.ts';
+import {
+  STAR_MAP_MIN_ZOOM, STAR_MAP_MAX_ZOOM, buildGraphIndex, createWheelGesture,
+  graphLabelVisibility, graphPanelMaxHeight, layoutGraph, scopeGraph, stepGraphRange,
+} from '../src/graph.ts';
 
 const seed = JSON.parse(readFileSync(new URL('./fixtures/graph-seed.json', import.meta.url), 'utf8'));
 const memory = (id, repositoryId) => ({
@@ -98,6 +101,55 @@ assert.equal(range, 4);
 for (let step = 0; step < 4; step++) range = stepGraphRange(range, -1);
 assert.equal(range, 0);
 
+assert.equal(graphPanelMaxHeight(600, 110), 252, 'unconstrained short windows retain the 42% panel height');
+assert.equal(graphPanelMaxHeight(900, 150), 280, 'unconstrained tall windows retain the 280px panel cap');
+let previousPanelHeight = Infinity;
+for (const [repositories, topInset, expectedPanelHeight] of [[12, 233.59375, 124.40625], [24, 293.59375, 100]]) {
+  const height = 538;
+  const panelHeight = graphPanelMaxHeight(height, topInset);
+  const panelTop = height - 63 - panelHeight;
+  const headerBottom = topInset - 16;
+  const drawingHeight = panelTop - 18 - topInset;
+  const context = `544x538 star map with ${repositories} repositories`;
+  assert.equal(panelHeight, expectedPanelHeight, `${context}: growing headers shrink the panel`);
+  assert(panelHeight < Math.min(height * .42, 280), `${context}: the old fixed panel height no longer consumes the graph`);
+  assert(panelHeight <= previousPanelHeight, `${context}: a taller header never enlarges the panel`);
+  assert(drawingHeight > 0, `${context}: the visible-node candidate interval remains nonempty`);
+  assert(panelTop >= headerBottom + 16, `${context}: the panel stays below the complete header and tools`);
+  previousPanelHeight = panelHeight;
+}
+
+assert.equal(STAR_MAP_MIN_ZOOM, .35, 'minimum star-map zoom is 35%');
+assert.equal(STAR_MAP_MAX_ZOOM, 16, 'maximum star-map zoom is 1600%');
+const labelDensities = [['低', 4], ['标准', 3], ['高', 2]];
+for (const [density, fullZoom] of labelDensities) {
+  let previous = 0;
+  for (let percent = 35; percent <= 1600; percent++) {
+    const zoom = percent / 100;
+    const visibility = graphLabelVisibility(zoom, density);
+    const context = `${density} labels at ${percent}%`;
+    assert(Number.isFinite(visibility) && visibility >= 0 && visibility <= 1, `${context}: visibility is a ratio, not a fixed label count`);
+    assert(visibility >= previous, `${context}: zooming in never hides more labels`);
+    if (zoom <= .55) assert.equal(visibility, 0, `${context}: all titles remain hidden through 55%`);
+    else if (zoom < fullZoom) assert(visibility > previous && visibility < 1, `${context}: visibility increases progressively before the full-display threshold`);
+    else assert.equal(visibility, 1, `${context}: every visible node remains eligible through maximum zoom`);
+    if (zoom > STAR_MAP_MIN_ZOOM && zoom < STAR_MAP_MAX_ZOOM) {
+      const before = graphLabelVisibility(zoom - 1e-6, density);
+      const after = graphLabelVisibility(zoom + 1e-6, density);
+      assert(Math.abs(visibility - before) < 1e-5 && Math.abs(after - visibility) < 1e-5, `${context}: no discontinuous density or threshold jump`);
+    }
+    previous = visibility;
+  }
+  const partial = graphLabelVisibility(1, density);
+  assert(partial > 0 && partial < 1, `${density}: standard zoom returns a fractional visibility, not a 3/9/28 label cap`);
+  assert.equal(graphLabelVisibility(fullZoom, density), 1, `${density}: full visibility begins at ${fullZoom}x`);
+  assert.equal(graphLabelVisibility(STAR_MAP_MIN_ZOOM * (fullZoom / STAR_MAP_MIN_ZOOM), density), 1, `${density}: floating-point wheel/button round trips still reach full detail`);
+}
+for (let percent = 35; percent <= 1600; percent++) {
+  const [low, standard, high] = labelDensities.map(([density]) => graphLabelVisibility(percent / 100, density));
+  assert(high >= standard && standard >= low, `label density stays ordered at ${percent}%`);
+}
+
 const large = buildGraphIndex({
   nodes: Array.from({ length: 10_000 }, (_, index) => memory(`N-${index}`, `repo-${index % 3}`)),
   edges: Array.from({ length: 9_999 }, (_, index) => ({ source: `N-${index}`, target: `N-${index + 1}` })),
@@ -122,4 +174,4 @@ for (const repositoryId of ['repo-0', 'repo-1', 'repo-2']) {
 const allLocal = scopeGraph(hub, { ...options, centerId: 'Z', range: 2 });
 assert.deepEqual(layoutGraph(allLocal).get('Z'), { x: 0, y: 0, z: 0 });
 assert([...layoutGraph(allLocal).values()].some(point => Math.abs(point.z) > .2), 'local neighbors have actual spatial depth');
-console.log(`Graph checks passed: spherical volume, real hub anchor, stable order, BFS shells, repository scope, isolated nodes and auxiliary gesture helpers. 10,000-node scope + layout ${elapsed.toFixed(2)} ms.`);
+console.log(`Graph checks passed: spherical volume, real hub anchor, stable order, BFS shells, repository scope, isolated nodes, auxiliary gesture helpers, adaptive minimum-window panel geometry, 35%–1600% zoom bounds and continuous zoom-driven label visibility across all densities. 10,000-node scope + layout ${elapsed.toFixed(2)} ms.`);

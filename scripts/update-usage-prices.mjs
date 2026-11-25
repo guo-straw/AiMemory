@@ -1,55 +1,94 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const source = 'https://developers.openai.com/api/docs/pricing';
-const markdown = process.argv[2]
-  ? await readFile(process.argv[2], 'utf8')
-  : await fetch(`${source}.md`).then(response => {
-    if (!response.ok) throw new Error(`获取官方价格失败：${response.status}`);
-    return response.text();
-  });
-const checkedAt = new Date().toISOString().slice(0, 10);
-const rates = [];
+const cachingSource = 'https://developers.openai.com/api/docs/guides/prompt-caching';
+const cacheRulesCheckedAt = '2026-11-25';
+// The caching guide explicitly says GPT-5.5 and earlier have no additional write charge.
+// Keep this list exact: a missing write-price cell alone does not establish that rule.
+const writesAtInputRate = new Set([
+  'gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4', 'gpt-5.4-pro', 'gpt-5.4-mini', 'gpt-5.4-nano',
+  'gpt-5.3-codex', 'gpt-5.2', 'gpt-5.2-pro', 'gpt-5.1', 'gpt-5', 'gpt-5-mini',
+  'gpt-5-nano', 'gpt-5-pro', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-pro',
+]);
 const value = text => text.trim() === '-' ? null : Number(text.replace(/[$,]/g, ''));
 const sql = value => value === null ? 'NULL' : typeof value === 'number' ? String(value) : `'${value.replaceAll("'", "''")}'`;
 
-function table(heading, tier, from = 0, until = null) {
-  const section = markdown.split(`### ${heading} pricing data\n`)[1]?.split('\n### ')[0];
-  if (!section) throw new Error(`官方价格缺少 ${heading} 表格`);
-  for (const line of section.split('\n')) {
-    const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
-    if (!cells[0]?.startsWith('gpt-') && !cells[0]?.startsWith('o3')) continue;
-    const model = cells[0].replace(/\s*\(.*\)$/, '');
-    const contexts = cells.length === 11 ? [0, 1] : [0];
-    for (const context of contexts) {
-      const offset = context * 5;
-      const input = value(cells[1 + offset]);
-      const output = value(cells[2 + offset]);
-      const cached = value(cells[3 + offset]);
-      if (input === null || output === null) continue;
-      const min = context ? 272001 : 0;
-      const max = cells.length === 11 && !context ? 272000 : null;
-      const contextLabel = cells.length === 11 ? context ? '长上下文 >272K' : '短上下文 ≤272K' : '全部上下文';
-      rates.push([model, tier, min, max, from, until, input, cached, output, `OpenAI 官方 · ${checkedAt} · ${tier} · ${contextLabel}`]);
+export function generateOfficialPrices(markdown, checkedAt) {
+  const rates = [];
+  function rate(model, tier, min, max, from, until, input, cached, output, write30m = null, write12h = null) {
+    // Logs retain the write count, not its TTL split. Only a TTL-independent rate is usable.
+    const write = writesAtInputRate.has(model) ? input : null;
+    const context = max !== null ? '短上下文 ≤272K' : min ? '长上下文 >272K' : '全部上下文';
+    const writeNote = write !== null ? '缓存写入按输入价' : write30m !== null || write12h !== null ? '缓存写入缺TTL未定价' : '缓存写入未预设';
+    rates.push([model, tier, min, max, from, until, input, cached, write, output, `OpenAI 官方参考价 · ${checkedAt} · ${tier} · ${context} · ${writeNote}`]);
+  }
+  function table(heading, tier, from = 0, until = null) {
+    const section = markdown.split(`### ${heading} pricing data\n`)[1]?.split('\n### ')[0];
+    if (!section) throw new Error(`官方价格缺少 ${heading} 表格`);
+    for (const line of section.split('\n')) {
+      const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+      if (!cells[0]?.startsWith('gpt-') && !cells[0]?.startsWith('o3')) continue;
+      const model = cells[0].replace(/\s*\(<272K context length\)$/, '');
+      if (![4, 11].includes(cells.length) || !/^[a-z0-9.-]+$/.test(model)) {
+        throw new Error(`官方价格表结构发生变化：${cells[0]}`);
+      }
+      const contexts = cells.length === 11 ? [0, 1] : [0];
+      for (const context of contexts) {
+        const offset = context * 5;
+        const input = value(cells[1 + offset]);
+        const output = value(cells[2 + offset]);
+        const cached = value(cells[3 + offset]);
+        if (input === null || output === null) continue;
+        rate(model, tier, context ? 272001 : 0, cells.length === 11 && !context ? 272000 : null,
+          from, until, input, cached, output,
+          cells.length === 11 ? value(cells[4 + offset]) : null,
+          cells.length === 11 ? value(cells[5 + offset]) : null);
+      }
     }
   }
-}
 
-for (const tier of ['Standard', 'Batch', 'Flex', 'Fast', 'Ultrafast']) table(tier, tier.toLowerCase());
-const promotionEnd = Date.parse('2027-03-01T08:00:00Z');
-table('Ultrafast promotion', 'ultrafast', 0, promotionEnd);
-table('Ultrafast list', 'ultrafast', promotionEnd);
-for (const match of markdown.matchAll(/^\| Codex \| (gpt-[^|]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|([^\n]*)$/gm)) {
-  const [, model, input, output, cached, rest] = match;
-  const tier = rest.trim() ? 'standard' : 'fast';
-  rates.push([model.trim(), tier, 0, null, 0, null, value(input), value(cached), value(output), `OpenAI 官方 · ${checkedAt} · ${tier}`]);
-}
-if (rates.length < 80 || rates.some(row => row.some(item => typeof item === 'number' && !Number.isFinite(item)))) {
-  throw new Error('官方价格表结构发生变化，请核实生成逻辑');
-}
-await writeFile(new URL('../src-tauri/src/usage/official-prices.sql', import.meta.url), `-- Generated by scripts/update-usage-prices.mjs; do not edit.
--- Source: ${source} · checked ${checkedAt}. Cache-write TTL is absent from Codex logs.
-CREATE TEMP TABLE usage_official_prices(model TEXT NOT NULL,tier TEXT NOT NULL,min_input INTEGER NOT NULL,max_input INTEGER,valid_from INTEGER NOT NULL,valid_until INTEGER,input REAL,cached REAL,output REAL,source TEXT NOT NULL,PRIMARY KEY(model,tier,min_input,valid_from));
+  for (const tier of ['Standard', 'Batch', 'Flex', 'Fast', 'Ultrafast']) table(tier, tier.toLowerCase());
+  const promotionEnd = Date.parse('2027-03-01T08:00:00Z');
+  table('Ultrafast promotion', 'ultrafast', 0, promotionEnd);
+  table('Ultrafast list', 'ultrafast', promotionEnd);
+  for (const match of markdown.matchAll(/^\| Codex \| (gpt-[^|]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|([^\n]*)$/gm)) {
+    const [, model, input, output, cached, rest] = match;
+    const tier = rest.trim() ? 'standard' : 'fast';
+    rate(model.trim(), tier, 0, null, 0, null, value(input), value(cached), value(output));
+  }
+  if (rates.length < 80 || rates.some(row => row.some(item => typeof item === 'number' && !Number.isFinite(item)))) {
+    throw new Error('官方价格表结构发生变化，请核实生成逻辑');
+  }
+  return { count: rates.length, sql: `-- Generated by scripts/update-usage-prices.mjs; do not edit.
+-- Source: ${source} · checked ${checkedAt}. USD per million tokens; reference snapshot, not a gateway or subscription bill.
+-- Cache writes: ${cachingSource} · rules checked ${cacheRulesCheckedAt}. Only TTL-independent write rates are populated; missing TTL is not zero.
+CREATE TEMP TABLE usage_official_prices(model TEXT NOT NULL,tier TEXT NOT NULL,min_input INTEGER NOT NULL,max_input INTEGER,valid_from INTEGER NOT NULL,valid_until INTEGER,input REAL,cached REAL,cache_write REAL,output REAL,source TEXT NOT NULL,PRIMARY KEY(model,tier,min_input,valid_from));
 INSERT INTO usage_official_prices VALUES
 ${rates.map(row => `(${row.map(sql).join(',')})`).join(',\n')};
-`);
-console.log(`Generated ${rates.length} official context/tier prices, checked ${checkedAt}`);
+` };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { values, positionals } = parseArgs({
+    options: { 'checked-at': { type: 'string' }, output: { type: 'string' } },
+    allowPositionals: true,
+  });
+  if (positionals.length > 1 || positionals.length && !values['checked-at']) {
+    throw new Error('本地官方文档快照必须指定实际核对日期：node scripts/update-usage-prices.mjs [pricing.md --checked-at YYYY-MM-DD] [--output path]');
+  }
+  const checkedAt = values['checked-at'] ?? new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkedAt) || !Number.isFinite(Date.parse(checkedAt))) {
+    throw new Error('核对日期必须为 YYYY-MM-DD');
+  }
+  const markdown = positionals[0]
+    ? await readFile(positionals[0], 'utf8')
+    : await fetch(`${source}.md`).then(response => {
+      if (!response.ok) throw new Error(`获取官方价格失败：${response.status}`);
+      return response.text();
+    });
+  const result = generateOfficialPrices(markdown, checkedAt);
+  await writeFile(values.output ?? new URL('../src-tauri/src/usage/official-prices.sql', import.meta.url), result.sql);
+  console.log(`Generated ${result.count} official context/tier prices, checked ${checkedAt}`);
+}
