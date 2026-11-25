@@ -90,14 +90,11 @@ fn legacy_database_adds_codex_client_without_resetting_usage_or_settings() {
     drop(db);
     scan(&mut store, &home);
     assert_eq!(overview(&store, &home).summary.records, 1);
-    assert_eq!(
-        store.source_path(&before.id).unwrap(),
-        path.to_string_lossy()
-    );
+    assert_eq!(PathBuf::from(store.source_path(&before.id).unwrap()), path);
     let views = temp.path().join("unused-codex-views");
     assert_eq!(
-        store.source_view(&before.id, &views).unwrap(),
-        path.to_string_lossy()
+        PathBuf::from(store.source_view(&before.id, &views).unwrap()),
+        path
     );
     assert!(!views.exists());
 }
@@ -948,6 +945,14 @@ fn harness_project_follows_live_and_inherited_working_directory_changes() {
     }
     project_a = project_a.canonicalize().unwrap();
     project_b = project_b.canonicalize().unwrap();
+    // Project keys use Git's slash form, not Windows verbatim paths.
+    let project_key = |path: &Path| {
+        path.to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .replace('\\', "/")
+    };
+    let project_a_key = project_key(&project_a);
+    let project_b_key = project_key(&project_b);
     let project_a = project_a.to_string_lossy().into_owned();
     let project_b = project_b.to_string_lossy().into_owned();
     let directories = roots(&home);
@@ -987,9 +992,9 @@ fn harness_project_follows_live_and_inherited_working_directory_changes() {
     );
     assert_eq!(child.session.parent_id.as_deref(), Some("harness:moving"));
     assert_eq!(child.session.role, "main");
-    assert_eq!(child.records[0].project, project_b);
+    assert_eq!(child.records[0].project, project_b_key);
     assert_eq!(child.records[0].provider, "deepseek");
-    f.project = Some(project_b.clone());
+    f.project = Some(project_b_key.clone());
     let b = store
         .overview(&f, &directories, ScanStatus::default())
         .unwrap();
@@ -1006,8 +1011,8 @@ fn harness_project_follows_live_and_inherited_working_directory_changes() {
         .records(&f, None, None)
         .unwrap()
         .iter()
-        .all(|r| r.project == project_b));
-    f.project = Some(project_a.clone());
+        .all(|r| r.project == project_b_key));
+    f.project = Some(project_a_key.clone());
     let a = store
         .overview(&f, &directories, ScanStatus::default())
         .unwrap();
@@ -1015,7 +1020,10 @@ fn harness_project_follows_live_and_inherited_working_directory_changes() {
         (a.summary.records, a.summary.input, a.summary.output),
         (1, 11, 1)
     );
-    assert_eq!(store.records(&f, None, None).unwrap()[0].project, project_a);
+    assert_eq!(
+        store.records(&f, None, None).unwrap()[0].project,
+        project_a_key
+    );
 }
 
 #[test]

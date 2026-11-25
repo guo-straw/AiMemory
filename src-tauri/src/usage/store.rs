@@ -929,17 +929,12 @@ impl Store {
             temporary
                 .write_all(content.as_bytes())
                 .map_err(|e| e.to_string())?;
-            let mut permissions = temporary
-                .as_file()
-                .metadata()
-                .map_err(|e| e.to_string())?
-                .permissions();
+            let file = temporary.persist(&view).map_err(|e| e.error.to_string())?;
+            // Windows persist 会重设文件属性，落盘后再锁定只读副本。
+            let mut permissions = file.metadata().map_err(|e| e.to_string())?.permissions();
             permissions.set_readonly(true);
-            temporary
-                .as_file()
-                .set_permissions(permissions)
+            file.set_permissions(permissions)
                 .map_err(|e| e.to_string())?;
-            temporary.persist(&view).map_err(|e| e.error.to_string())?;
         }
         Ok(view.to_string_lossy().into_owned())
     }
