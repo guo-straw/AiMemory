@@ -123,7 +123,7 @@ async function openRelease() {
         </label>
       </div>
     </div>
-    <aside class="settings-side-panel">
+    <aside class="settings-side-panel glass-surface">
       <h2>发布来源</h2>
       <code class="update-repository">guo-straw/AiMemory</code>
     </aside>

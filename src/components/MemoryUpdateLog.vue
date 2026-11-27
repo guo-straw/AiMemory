@@ -21,7 +21,7 @@ onMounted(() => dialog.value?.showModal());
 </script>
 
 <template>
-  <dialog ref="dialog" class="memory-log-dialog" aria-labelledby="memory-log-title" data-testid="memory-update-log" @close="emit('close')" @click.self="dialog?.close()">
+  <dialog ref="dialog" class="memory-log-dialog glass-raised" aria-labelledby="memory-log-title" data-testid="memory-update-log" @close="emit('close')" @click.self="dialog?.close()">
     <header class="memory-log-heading">
       <h2 id="memory-log-title"><History :size="19" />更新日志</h2>
       <button type="button" class="icon-button" aria-label="关闭更新日志" autofocus @click="dialog?.close()"><X :size="18" /></button>
@@ -35,11 +35,11 @@ onMounted(() => dialog.value?.showModal());
 </template>
 
 <style scoped>
-.memory-log-dialog { width: 640px; max-width: calc(100vw - 48px); max-height: calc(100vh - 64px); margin: auto; padding: 26px; border: 1px solid var(--line); border-radius: 14px; color: var(--fg); background: var(--bg); box-shadow: 0 16px 80px #1a1c1f25; }
-.memory-log-dialog::backdrop { background: color-mix(in srgb, var(--fg) 24%, transparent); backdrop-filter: blur(3px); }
+.memory-log-dialog { width: 640px; max-width: calc(100vw - 48px); max-height: calc(100vh - 64px); margin: auto; padding: 24px; border-radius: var(--radius-shell); color: var(--fg); }
+.memory-log-dialog::backdrop { background: var(--scrim); }
 .memory-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 h2 { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 600; }
 .memory-log-name { margin-top: 12px; color: var(--muted); font-size: var(--font-size-body); overflow-wrap: anywhere; }
-.memory-log-content { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.memory-log-content { margin-top: 24px; padding: 16px; border-radius: var(--radius-control); background: var(--bg); }
 .memory-log-empty { color: var(--muted); font-size: var(--font-size-body); }
 </style>

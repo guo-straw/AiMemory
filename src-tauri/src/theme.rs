@@ -15,10 +15,10 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            preset: "ChatGPT".into(),
-            accent: "#3566F0".into(),
-            background: "#FFFFFF".into(),
-            foreground: "#1A1C1F".into(),
+            preset: "玻璃拟态".into(),
+            accent: "#3D7EA6".into(),
+            background: "#F8F9FB".into(),
+            foreground: "#16181C".into(),
             font: "system".into(),
         }
     }

@@ -339,8 +339,8 @@ onBeforeUnmount(() => {
     <div ref="topbar" class="star-topbar">
       <header class="star-heading">
         <div class="star-heading-line"><h1>记忆星图</h1><p class="star-total"><strong>{{ index.nodes.length.toLocaleString() }}</strong> 记忆<span>·</span><strong>{{ index.edges.length.toLocaleString() }}</strong> 关联</p></div>
-        <div class="star-legend" aria-label="仓库图例"><span v-for="repo in legend" :key="repo.id" :title="repo.name"><i class="star-dot" :style="{ background: repo.color }" /><span class="star-repository-name">{{ repo.name }}</span><small>{{ repo.count.toLocaleString() }}</small></span></div>
-        <div v-if="range > 0" class="star-context"><button class="text-button" @click="showOverview"><Maximize2 :size="14" />返回全景</button><span>当前记忆及直接关联</span></div>
+        <div class="star-legend glass-surface" aria-label="仓库图例"><span v-for="repo in legend" :key="repo.id" :title="repo.name"><i class="star-dot" :style="{ background: repo.color }" /><span class="star-repository-name">{{ repo.name }}</span><small>{{ repo.count.toLocaleString() }}</small></span></div>
+        <div v-if="range > 0" class="star-context glass-surface"><button class="text-button" @click="showOverview"><Maximize2 :size="14" />返回全景</button><span>当前记忆及直接关联</span></div>
       </header>
       <div class="star-tools">
         <div class="star-search" @focusout="event => { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) searchOpen = false; }">
@@ -348,7 +348,7 @@ onBeforeUnmount(() => {
           <input ref="searchField" v-model="search" type="search" role="combobox" aria-autocomplete="list" aria-controls="star-search-results" :aria-expanded="showMatches" :aria-activedescendant="searchMatchIndex >= 0 && showMatches ? `star-match-${searchMatchIndex}` : undefined" aria-label="搜索记忆标题、ID、摘要或标签" placeholder="搜索记忆" autocomplete="off" data-testid="star-search" @focus="searchOpen = true" @keydown="searchKeydown" />
           <span v-if="search.trim()" class="star-search-count" data-testid="star-search-count" aria-live="polite">{{ allMatches.length }}</span>
           <button v-if="search" type="button" class="icon-button star-search-clear" aria-label="清空星图搜索" data-testid="star-search-clear" @click="clearSearch"><X :size="14" /></button>
-          <div v-if="showMatches" id="star-search-results" class="star-matches" role="listbox" aria-label="匹配的记忆">
+          <div v-if="showMatches" id="star-search-results" class="star-matches glass-raised" role="listbox" aria-label="匹配的记忆">
             <div class="star-matches-heading">{{ allMatches.length }} 条命中<span v-if="allMatches.length > 12">展示前 12 条</span></div>
             <button v-for="(memory, position) in matches" :id="`star-match-${position}`" :key="memory.id" type="button" role="option" :aria-selected="position === searchMatchIndex" :class="{ active: position === searchMatchIndex }" :data-memory-id="memory.id" @click="selectSearchMatch(memory.id)"><span>{{ memory.title }}</span><small>{{ repositoryById.get(memory.repositoryId)?.name ?? memory.repositoryId }} · {{ memory.id }}<em v-if="!visibleIds.has(memory.id)">当前范围外</em></small></button>
             <p v-if="!matches.length">没有匹配的记忆</p>
@@ -358,7 +358,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <aside v-if="settingsOpen" id="star-settings" class="star-panel star-settings" aria-label="图谱设置" data-testid="star-settings" @wheel.stop>
+    <aside v-if="settingsOpen" id="star-settings" class="star-panel star-settings glass-raised" aria-label="图谱设置" data-testid="star-settings" @wheel.stop>
       <div class="star-panel-heading"><h2>图谱设置</h2><button class="icon-button" aria-label="关闭图谱设置" @click="settingsOpen = false; settingsButton?.focus()"><X :size="17" /></button></div>
       <section class="star-setting-section"><h3>筛选</h3><div class="star-option"><span>仓库范围</span><AppSelect :model-value="repositoryId ?? ''" :options="repositoryOptions" aria-label="筛选仓库" data-testid="star-repository-filter" @update:model-value="changeRepository" /></div><label class="star-option"><span>显示孤立记忆</span><input v-model="showIsolated" type="checkbox" role="switch" data-testid="star-isolated" /></label></section>
       <section class="star-setting-section"><h3>分组</h3><label class="star-option"><span>按仓库着色</span><span class="star-color-toggle"><i v-for="color in [...colors.values()].slice(0, 4)" :key="color" :style="{ background: color }" /><input v-model="colorByRepository" type="checkbox" role="switch" /></span></label></section>
@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
       <footer><button class="text-button" @click="resetSettings"><RefreshCw :size="15" />恢复默认</button></footer>
     </aside>
 
-    <aside v-else-if="selectedNode" ref="detailPanel" class="star-panel star-detail" aria-label="所选记忆" data-testid="star-detail" @wheel.stop>
+    <aside v-else-if="selectedNode" ref="detailPanel" class="star-panel star-detail glass-raised" aria-label="所选记忆" data-testid="star-detail" @wheel.stop>
       <div class="star-panel-heading"><span class="star-selected-chip">记忆原文</span><button class="icon-button" aria-label="关闭节点详情" title="关闭详情，返回全景" @click="showOverview"><X :size="17" /></button></div>
       <h2>{{ selectedNode.title }}</h2>
       <div class="star-detail-meta"><span class="star-dot" :style="{ background: colorByRepository ? colors.get(selectedNode.repositoryId) : 'var(--accent)' }" /><span>{{ selectedNode.id }}</span><span>·</span><span>{{ repositoryById.get(selectedNode.repositoryId)?.name ?? selectedNode.repositoryId }}</span></div>
@@ -381,14 +381,14 @@ onBeforeUnmount(() => {
 
     <div v-if="!graph.nodes.length" class="star-empty"><GitBranch :size="32" /><h2>还没有可显示的记忆</h2></div>
     <div v-else-if="!scoped.nodes.length" class="star-empty"><Focus :size="30" /><h2>当前范围没有记忆</h2></div>
-    <div class="star-camera"><button class="icon-button" aria-label="缩小星图" :disabled="zoom <= STAR_MAP_MIN_ZOOM * 100" @click="adjustZoom(1 / 1.2)"><Minus :size="17" /></button><output aria-label="缩放比例">{{ zoom }}%</output><button class="icon-button" aria-label="放大星图" :disabled="zoom >= STAR_MAP_MAX_ZOOM * 100" @click="adjustZoom(1.2)"><Plus :size="17" /></button><span /><button class="icon-button" aria-label="重置星图视角" title="重置视角" @click="resetCamera"><Maximize2 :size="17" /></button></div>
-    <footer class="star-footer"><div id="star-map-status" class="star-count" role="status" aria-live="polite" data-testid="star-range-status"><strong>{{ range ? '关联视图' : '全景' }}</strong><span>{{ scoped.nodes.length.toLocaleString() }} 记忆 · {{ scoped.edges.length.toLocaleString() }} 关联</span></div><span class="star-gesture">左键旋转 · 中键平移 · 滚轮缩放 · 点击阅读</span><span class="star-token">本地浏览</span></footer>
+    <div class="star-camera glass-surface"><button class="icon-button" aria-label="缩小星图" :disabled="zoom <= STAR_MAP_MIN_ZOOM * 100" @click="adjustZoom(1 / 1.2)"><Minus :size="17" /></button><output aria-label="缩放比例">{{ zoom }}%</output><button class="icon-button" aria-label="放大星图" :disabled="zoom >= STAR_MAP_MAX_ZOOM * 100" @click="adjustZoom(1.2)"><Plus :size="17" /></button><span /><button class="icon-button" aria-label="重置星图视角" title="重置视角" @click="resetCamera"><Maximize2 :size="17" /></button></div>
+    <footer class="star-footer glass-surface"><div id="star-map-status" class="star-count" role="status" aria-live="polite" data-testid="star-range-status"><strong>{{ range ? '关联视图' : '全景' }}</strong><span>{{ scoped.nodes.length.toLocaleString() }} 记忆 · {{ scoped.edges.length.toLocaleString() }} 关联</span></div><span class="star-gesture">左键旋转 · 中键平移 · 滚轮缩放 · 点击阅读</span><span class="star-token">本地浏览</span></footer>
     <span class="star-sr" aria-live="polite">{{ selectionStatus }}</span>
   </section>
 </template>
 
 <style scoped>
-.star-map { --bg: #0e1a2d; --fg: #e4edf9; --background: var(--bg); --foreground: var(--fg); --surface: #13213a; --side: #0d1a2d; --muted: #a2b3cb; --faint: #7e91ad; --line: #263952; --hover: #172a45; --graph-bg: #080f1d; --graph-line: #2b4264; --graph-muted: #445672; --danger: #f3a5a1; position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--graph-bg); color: var(--fg); color-scheme: dark; container-type: inline-size; container-name: star-map; }
+.star-map { --bg: #0e1a2d; --fg: #e4edf9; --background: var(--bg); --foreground: var(--fg); --surface: #13213a; --side: #0d1a2d; --muted: #a2b3cb; --faint: #7e91ad; --line: #263952; --hover: #172a45; --graph-bg: #080f1d; --graph-line: #2b4264; --graph-muted: #445672; --danger: #f3a5a1; position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--graph-bg); color: var(--fg); border: 1px solid var(--glass-edge); border-radius: var(--radius-shell); container-type: inline-size; container-name: star-map; }
 .star-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; outline-offset: -4px; }
 .star-canvas.dragging { cursor: grabbing; }
 .star-canvas.node-hovered { cursor: pointer; }
@@ -402,7 +402,7 @@ onBeforeUnmount(() => {
 .star-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; color: var(--faint); font-size: 11px; line-height: 1.6; font-variant-numeric: tabular-nums; }
 .star-total strong { color: #becde2; font-weight: 500; }
 .star-total > span { margin: 0 3px; color: #536780; }
-.star-legend { display: flex; flex-wrap: wrap; gap: 5px 13px; margin-top: 12px; padding: 7px 10px; width: fit-content; max-width: 100%; background: #0e1b2b9c; border: 1px solid #2539518a; border-radius: 7px; font-size: 10px; line-height: 1.5; color: var(--muted); pointer-events: auto; backdrop-filter: blur(12px); }
+.star-legend { display: flex; flex-wrap: wrap; gap: 5px 13px; margin-top: 12px; padding: 7px 10px; width: fit-content; max-width: 100%; border-radius: var(--radius-control); font-size: 10px; line-height: 1.5; color: var(--muted); pointer-events: auto; }
 .star-legend:empty { display: none; }
 .star-legend > span { display: inline-flex; flex: 0 1 auto; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
 .star-repository-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -418,7 +418,7 @@ onBeforeUnmount(() => {
 .star-map .star-settings-button { flex-shrink: 0; min-height: 36px; padding: 7px 10px; gap: 7px; font-size: 11px; background: #0e1a2de8; backdrop-filter: blur(14px); }
 .star-settings-button > svg:last-child { margin-left: 2px; }
 .star-map .star-settings-button.active { background: var(--soft); border-color: var(--accent-line); color: var(--accent-text); }
-.star-matches { position: absolute; z-index: 8; left: -1px; right: -1px; top: 42px; max-height: min(340px, calc(100vh - 250px)); overflow: auto; padding: 5px; background: #101d30f5; border: 1px solid #2c4260; border-radius: 8px; box-shadow: 0 12px 32px #0005; backdrop-filter: blur(16px); }
+.star-matches { position: absolute; z-index: 8; left: -1px; right: -1px; top: 42px; max-height: min(340px, calc(100vh - 250px)); overflow: auto; padding: 5px; border-radius: var(--radius-control); }
 .star-matches-heading { display: flex; justify-content: space-between; gap: 8px; padding: 7px 8px 9px; color: var(--muted); font-size: 10px; }
 .star-matches-heading > span { color: var(--faint); }
 .star-matches button { display: flex; width: 100%; gap: 5px; flex-direction: column; align-items: flex-start; padding: 9px 8px; text-align: left; color: var(--fg); border: 0; border-radius: 5px; background: transparent; }
@@ -427,13 +427,13 @@ onBeforeUnmount(() => {
 .star-matches small { color: var(--faint); font: 9px/1.7 Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 .star-matches em { font-size: 9px; font-style: normal; line-height: 1.7; color: var(--muted); margin-left: 8px; }
 .star-matches p { color: var(--muted); font-size: 12px; padding: 14px 8px; line-height: 1.7; }
-.star-context { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; width: fit-content; max-width: 100%; margin-top: 12px; pointer-events: auto; padding: 4px 9px 4px 4px; border: 1px solid #2a3e59; border-radius: 8px; background: #0e1a2de8; color: var(--faint); font-size: 10px; backdrop-filter: blur(14px); }
+.star-context { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; width: fit-content; max-width: 100%; margin-top: 12px; pointer-events: auto; padding: 4px 9px 4px 4px; border-radius: var(--radius-control); color: var(--faint); font-size: 10px; }
 .star-context .text-button { color: var(--accent-text); font-size: 11px; }
-.star-panel { position: absolute; z-index: 3; right: 22px; top: 72px; width: 324px; max-height: calc(100% - 138px); overflow-y: auto; overscroll-behavior: contain; background: #0e1a2df0; color: var(--fg); border: 1px solid #2c405b; border-radius: 10px; box-shadow: 0 12px 40px #0004; backdrop-filter: blur(18px); scrollbar-color: #344a68 transparent; }
+.star-panel { position: absolute; z-index: 3; right: 22px; top: 72px; width: 324px; max-height: calc(100% - 138px); overflow-y: auto; overscroll-behavior: contain; color: var(--fg); border-radius: var(--radius-panel); scrollbar-color: #344a68 transparent; }
 .star-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .star-panel-heading .icon-button { width: 27px; height: 27px; background: #15243a; }
 .star-panel-heading h2 { font-size: 15px; font-weight: 550; }
-.star-selected-chip { color: var(--accent-text); background: var(--soft); border: 1px solid var(--accent-line); border-radius: 5px; padding: 4px 7px; font-size: 10px; font-weight: 500; }
+.star-selected-chip { color: var(--accent-text); background: var(--soft); border: 1px solid var(--accent-line); border-radius: var(--radius-pill); padding: 4px 7px; font-size: 10px; font-weight: 500; }
 .star-detail { padding: 14px 16px; }
 .star-detail > h2 { font-size: 18px; font-weight: 600; line-height: 1.5; margin: 17px 0 11px; letter-spacing: -.2px; overflow-wrap: anywhere; }
 .star-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--faint); font: 9px/1.8 Menlo, Consolas, monospace; }
@@ -442,7 +442,7 @@ onBeforeUnmount(() => {
 .star-read-status, .star-read-error { margin-top: 14px; font-size: 12px; line-height: 1.7; }
 .star-read-status { color: var(--muted); }
 .star-read-error { color: var(--danger); overflow-wrap: anywhere; }
-.star-body { margin-top: 18px; }
+.star-body { margin-top: 16px; padding: 12px; border-radius: var(--radius-control); background: var(--bg); }
 .star-body :deep(.markdown) { color: #c4d1e4; font-size: 12px; line-height: 1.85; }
 .star-body :deep(.markdown h1), .star-body :deep(.markdown h2), .star-body :deep(.markdown h3) { color: var(--fg); font-size: 13px; margin: 20px 0 9px; line-height: 1.6; }
 .star-body :deep(.markdown .memory-conclusion) { padding: 11px 12px; margin: 0 0 17px; border-radius: 0 6px 6px 0; border-left-width: 2px; }
@@ -488,10 +488,10 @@ onBeforeUnmount(() => {
 .star-settings footer { border-top: 1px solid var(--line); margin-top: 8px; padding: 6px 11px; }
 .star-settings footer .text-button { font-size: 11px; }
 .star-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.star-camera { display: flex; align-items: center; gap: 3px; position: absolute; right: 22px; bottom: 16px; height: 35px; background: #0e1a2de8; border: 1px solid #2a3e59; border-radius: 8px; padding: 3px 6px; backdrop-filter: blur(14px); }
+.star-camera { display: flex; align-items: center; gap: 3px; position: absolute; right: 22px; bottom: 16px; height: 35px; border-radius: var(--radius-control); padding: 3px 6px; }
 .star-camera output { min-width: 39px; text-align: center; font: 10px Menlo, Consolas, monospace; color: var(--muted); }
 .star-camera > span { height: 17px; border-left: 1px solid var(--line); margin: 0 4px; }
-.star-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 18px; position: absolute; bottom: 16px; left: 22px; right: 212px; min-height: 35px; padding: 7px 10px; background: #0e1a2dba; border: 1px solid #2539518a; border-radius: 8px; font-size: 10px; color: var(--muted); line-height: 1.7; backdrop-filter: blur(12px); }
+.star-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 18px; position: absolute; bottom: 16px; left: 22px; right: 212px; min-height: 35px; padding: 7px 10px; border-radius: var(--radius-control); font-size: 10px; color: var(--muted); line-height: 1.7; backdrop-filter: blur(12px); }
 .star-count { display: flex; gap: 10px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .star-count strong { font-weight: 500; color: #c3d3e8; }
 .star-gesture { margin-left: auto; color: var(--faint); }

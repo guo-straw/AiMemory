@@ -148,7 +148,7 @@ defineExpose({ busy });
           </div>
         </section>
       </div>
-      <aside class="transfer-summary" aria-labelledby="transfer-summary-title">
+      <aside class="transfer-summary glass-surface" aria-labelledby="transfer-summary-title">
         <h2 id="transfer-summary-title">当前工作区</h2>
         <dl class="transfer-context">
           <div><dt>Git 仓库</dt><dd>{{ workspace.repositories.length }} 个</dd></div>
@@ -203,7 +203,7 @@ defineExpose({ busy });
 .package-body > p { color: var(--muted); font-size: var(--font-size-label); line-height: 1.8; margin-top: 7px; }
 .package-body > code { display: block; font: 11px/1.7 Menlo, Consolas, monospace; color: var(--muted); margin-top: 9px; overflow-wrap: anywhere; }
 .package-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.transfer-summary { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: 10px; background: var(--side); }
+.transfer-summary { min-width: 0; padding: 24px; border-radius: var(--radius-panel); }
 .transfer-summary > h2 { font-size: var(--font-size-body); font-weight: 550; margin: 0 0 18px; }
 .transfer-context { display: grid; gap: 13px; margin: 0; font-size: var(--font-size-label); }
 .transfer-context > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
@@ -231,7 +231,7 @@ defineExpose({ busy });
 .preview-section-heading h2 { display: flex; align-items: center; gap: 9px; font-size: var(--font-size-section); font-weight: 600; }
 .preview-section-heading > span { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .transfer-table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
-.transfer-page table { border-collapse: collapse; text-align: left; width: 100%; font-size: 12px; }
+.transfer-page table { background: var(--bg); border-collapse: collapse; text-align: left; width: 100%; font-size: 12px; }
 .transfer-page thead { background: var(--side); color: var(--muted); font-size: 11px; }
 .transfer-page th { font-weight: 500; }
 .transfer-page thead th { padding: 9px 12px; white-space: nowrap; }
@@ -249,7 +249,7 @@ defineExpose({ busy });
 .repository-cell { overflow-wrap: anywhere; color: var(--muted); }
 .repository-cell > small { display: block; font-size: 10px; margin-top: 5px; color: var(--faint); }
 .id-cell { font: 11px/1.8 Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-.import-badge { display: inline-block; white-space: nowrap; padding: 3px 9px; border-radius: 6px; background: var(--soft); color: var(--accent-text); font-size: 11px; font-weight: 550; }
+.import-badge { display: inline-block; white-space: nowrap; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--soft); color: var(--accent-text); font-size: 11px; font-weight: 550; }
 .import-badge.existing { background: var(--side); color: var(--muted); }
 .memory-preview-content td { padding: 15px 18px 21px; background: var(--side); }
 .memory-preview-content h3 { font-size: 12px; font-weight: 550; }
@@ -283,7 +283,7 @@ defineExpose({ busy });
 .transfer-confirm { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 20px; padding: 16px 0 0; border-top: 1px solid var(--line); }
 .transfer-confirm > p { max-width: 66%; font-size: 12px; line-height: 1.8; color: var(--muted); }
 .transfer-confirm > div { display: flex; gap: 10px; flex-shrink: 0; }
-@media (max-width: 1050px) { .transfer-page { padding-left: 30px; padding-right: 30px; } .transfer-layout { grid-template-columns: minmax(0, 1fr); max-width: 680px; gap: 24px; } }
+@media (max-width: 1100px) { .transfer-page { padding-left: 30px; padding-right: 30px; } .transfer-layout { grid-template-columns: minmax(0, 1fr); max-width: 680px; gap: 24px; } }
 @media (max-width: 700px) {
   .transfer-page { padding: 20px 24px 26px; }
   .transfer-heading > p { font-size: 13px; }

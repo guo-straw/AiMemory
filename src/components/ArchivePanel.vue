@@ -49,7 +49,7 @@ function duration(value: number | null) { return value === null ? '—' : value 
       </span>
     </div>
 
-    <div class="archive-metrics">
+    <div class="archive-metrics glass-surface">
       <div>
         <span>已处理轮次</span>
         <strong data-testid="processed-turns">{{ number(status?.processedTurns ?? 0) }}<small>轮</small></strong>
@@ -83,7 +83,7 @@ function duration(value: number | null) { return value === null ? '—' : value 
     </section>
 
     <div class="archive-detail-grid">
-      <section class="usage-panel">
+      <section class="usage-panel glass-surface">
         <header>
           <Activity :size="18" />
           <h2>记忆归档模型用量</h2>
@@ -104,7 +104,7 @@ function duration(value: number | null) { return value === null ? '—' : value 
       </section>
     </div>
 
-    <section class="archive-log">
+    <section class="archive-log glass-surface">
       <header>
         <h2>最近处理的轮次</h2>
       </header>

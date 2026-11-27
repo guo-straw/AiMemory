@@ -9,17 +9,18 @@ export interface ThemeConfig {
 }
 
 export const DEFAULT_THEME: ThemeConfig = {
-  preset: 'ChatGPT', accent: '#3566F0', background: '#FFFFFF', foreground: '#1A1C1F', font: 'system',
+  preset: '玻璃拟态', accent: '#3D7EA6', background: '#F8F9FB', foreground: '#16181C', font: 'system',
 };
 
 export const THEME_PRESETS: ThemeConfig[] = [
   DEFAULT_THEME,
-  { preset: '石墨夜色', accent: '#90AFFF', background: '#202227', foreground: '#F2F3F5', font: 'system' },
+  { preset: '石墨夜色', accent: '#9CC9E2', background: '#0A1320', foreground: '#EEF4FA', font: 'system' },
+  { preset: 'ChatGPT', accent: '#3566F0', background: '#FFFFFF', foreground: '#1A1C1F', font: 'system' },
   { preset: '暖纸', accent: '#9B5421', background: '#FBF6EB', foreground: '#352B23', font: 'serif' },
 ];
 
 const fontFamilies = {
-  system: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+  system: '-apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Segoe UI", "Microsoft YaHei", sans-serif',
   serif: 'Georgia, "Songti SC", "SimSun", serif',
   mono: 'ui-monospace, Menlo, Consolas, "PingFang SC", monospace',
 };
@@ -55,21 +56,22 @@ function legible(color: string, background: string, minimum: number) {
 
 export function themeTokens(theme: ThemeConfig) {
   const { accent, background: bg, foreground: fg, font } = theme;
+  const onAccent = contrast(accent, '#FFFFFF') >= contrast(accent, '#000000') ? '#FFFFFF' : '#000000';
   return {
     bg, fg, background: bg, foreground: fg, accent, font: fontFamilies[font],
     surface: mix(bg, fg, .04), side: mix(bg, fg, .025),
-    line: mix(bg, fg, .16), muted: mix(bg, fg, .72), faint: mix(bg, fg, .6),
+    line: mix(bg, fg, .14), muted: mix(bg, fg, .78), faint: mix(bg, fg, .69),
     soft: mix(bg, accent, .10), hover: mix(bg, fg, .06),
-    'accent-line': mix(bg, accent, .38), 'accent-text': legible(accent, bg, 4.5),
-    'on-accent': contrast(accent, '#FFFFFF') >= contrast(accent, '#000000') ? '#FFFFFF' : '#000000',
-    'accent-hover': mix(accent, fg, .12), 'graph-bg': mix(bg, accent, .025),
+    'accent-line': mix(bg, accent, .38), 'accent-text': legible(accent, bg, 5.5),
+    'on-accent': onAccent,
+    'accent-hover': mix(accent, onAccent === '#FFFFFF' ? '#000000' : '#FFFFFF', .12), 'graph-bg': mix(bg, accent, .025),
     'graph-line': mix(bg, fg, .28), 'graph-muted': mix(bg, fg, .43),
     'repo-a': legible(accent, bg, 3),
     'repo-b': legible('#318899', bg, 3),
     'repo-c': legible('#7564BE', bg, 3),
-    danger: legible('#B83C30', bg, 4.5), 'danger-soft': mix(bg, '#B83C30', .08), 'danger-line': mix(bg, '#B83C30', .30),
-    warning: legible('#966715', bg, 4.5), 'warning-soft': mix(bg, '#B48020', .09), 'warning-line': mix(bg, '#B48020', .32),
-    success: legible('#2B7557', bg, 4.5),
+    danger: legible('#B83C30', bg, 5.5), 'danger-soft': mix(bg, '#B83C30', .08), 'danger-line': mix(bg, '#B83C30', .30),
+    warning: legible('#966715', bg, 5.5), 'warning-soft': mix(bg, '#B48020', .09), 'warning-line': mix(bg, '#B48020', .32),
+    success: legible('#2B7557', bg, 5.5),
   };
 }
 
@@ -77,7 +79,7 @@ export function applyTheme(theme: ThemeConfig) {
   const root = document.documentElement;
   for (const [name, value] of Object.entries(themeTokens(theme))) root.style.setProperty('--' + name, value);
   root.dataset.theme = theme.preset;
-  root.style.colorScheme = luminance(theme.background) < .2 ? 'dark' : 'light';
+  root.dataset.colorScheme = luminance(theme.background) < .2 ? 'dark' : 'light';
   window.dispatchEvent(new Event('aimemory-theme'));
 }
 

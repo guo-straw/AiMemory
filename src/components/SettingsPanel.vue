@@ -140,13 +140,13 @@ defineExpose({ dirty, submit, reset });
         </div>
         <p v-if="!workspace.repositories.length" class="settings-empty">暂无接入的仓库</p>
       </div>
-      <aside class="settings-side-panel">
+      <aside class="settings-side-panel glass-surface">
         <h2>本地文件</h2>
         <button type="button" class="button" :disabled="loading || saving" @click="emit('refresh')"><RefreshCw :size="15" :class="{ spinning: loading }" />刷新记忆库</button>
       </aside>
     </section>
 
-    <div v-show="tab === 'update'"><AppUpdate /></div>
+    <div v-show="tab === 'update'" class="settings-update"><AppUpdate /></div>
     <div v-if="tab === 'theme'" class="settings-embedded"><slot name="theme" :back="() => chooseTab('models')" /></div>
     <div v-if="tab === 'transfer'" class="settings-embedded"><slot name="transfer" :back="() => chooseTab('models')" /></div>
 
@@ -175,7 +175,7 @@ defineExpose({ dirty, submit, reset });
           <label class="toggle-label"><input v-model="draft.runInBackground" type="checkbox" role="switch" :disabled="saving || loading" data-testid="run-in-background" /><span>{{ draft.runInBackground ? '已开启' : '已关闭' }}</span></label>
         </div>
       </div>
-      <aside class="settings-side-panel">
+      <aside class="settings-side-panel glass-surface">
         <h2 class="settings-side-heading"><Clock3 :size="15" />归档起点</h2>
         <p class="archive-origin">{{ settings.archiveStartedAt ? dateTime(settings.archiveStartedAt) : '首次启用并保存时记录' }}</p>
       </aside>

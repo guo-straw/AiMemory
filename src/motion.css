@@ -1,0 +1,83 @@
+:root {
+  --motion-quick: 120ms;
+  --motion-content: 180ms;
+  --motion-overlay: 220ms;
+  --motion-ease: cubic-bezier(.22, .72, .32, 1);
+}
+
+button {
+  transition: background-color var(--motion-quick), border-color var(--motion-quick), color var(--motion-quick), scale var(--motion-quick) var(--motion-ease);
+}
+:where(.button, .icon-button, .app-select, .primary-nav button, .repository-nav button):active:not(:disabled) { scale: .97; }
+.memory-result:active:not(:disabled) { scale: .99; }
+
+.main-shell > :is(.workbench, .editor-page, .settings-page, .archive-usage-page, .star-map, .launch-view),
+.settings-page > :is(.settings-content-grid, .settings-embedded, .settings-update),
+.archive-usage-page > :is(.archive-page, .codex-usage) {
+  animation: content-fade var(--motion-content) var(--motion-ease);
+}
+.current-page-title, .reader-scroll, .reader-empty, .list-empty, .star-panel {
+  animation: content-enter var(--motion-content) var(--motion-ease);
+}
+.reader-scroll { transition: opacity var(--motion-quick); }
+.reader-scroll.is-reading { opacity: .72; transition-delay: 100ms; }
+
+.memory-result::before {
+  transition: scale var(--motion-content) var(--motion-ease), opacity var(--motion-quick);
+}
+.memory-result:not(.selected)::before { opacity: 0; scale: 1 .55; }
+:is(.settings-tabs, .usage-tabs) > button.active::after {
+  animation: tab-indicator var(--motion-content) var(--motion-ease);
+}
+
+.search-field { position: relative; overflow: hidden; transition: border-color var(--motion-quick), box-shadow var(--motion-quick); }
+.search-field.is-searching::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  animation: search-progress 1050ms ease-in-out 150ms infinite both;
+}
+
+.app-select-list, .star-matches { animation: content-fade var(--motion-quick) var(--motion-ease); }
+.usage-drawer[open], .memory-log-dialog[open], dialog[open]::backdrop {
+  animation: content-fade var(--motion-overlay) var(--motion-ease);
+}
+.memory-log-dialog[open] { animation-name: content-enter; }
+
+.scrim-enter-active, .overlay-enter-active, .notice-enter-active, .popover-enter-active {
+  transition: opacity var(--motion-overlay) var(--motion-ease), translate var(--motion-overlay) var(--motion-ease);
+}
+.scrim-leave-active, .overlay-leave-active, .notice-leave-active, .popover-leave-active {
+  pointer-events: none;
+  transition: opacity var(--motion-quick) ease-out, translate var(--motion-quick) ease-out;
+}
+.scrim-enter-from, .scrim-leave-to, .overlay-enter-from, .overlay-leave-to,
+.notice-enter-from, .notice-leave-to, .popover-enter-from, .popover-leave-to { opacity: 0; }
+.notice-enter-from, .notice-leave-to { translate: 0 8px; }
+.popover-enter-from, .popover-leave-to { translate: 0 4px; }
+.overlay-enter-active > .modal { animation: content-enter var(--motion-overlay) var(--motion-ease); }
+
+@media (max-width: 700px) {
+  .sidebar { transition: transform var(--motion-overlay) var(--motion-ease), visibility 0s linear var(--motion-overlay); }
+  .sidebar-open .sidebar { transition-delay: 0s; }
+  .reader-visible .memory-reader { animation: content-fade var(--motion-content) var(--motion-ease); }
+}
+
+@keyframes content-fade { from { opacity: .32; } }
+@keyframes content-enter { from { opacity: .4; translate: 0 5px; } }
+@keyframes tab-indicator { from { opacity: 0; scale: .65 1; } }
+@keyframes search-progress {
+  0% { opacity: 0; transform: translateX(-100%); }
+  25%, 75% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(225%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  :is(.button, .icon-button, .app-select, .memory-result, .primary-nav button, .repository-nav button):active:not(:disabled) { scale: none; }
+}

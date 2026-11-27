@@ -94,7 +94,7 @@ async function copy(text: string, field: HTMLInputElement | undefined, message: 
       <p class="mcp-copy-feedback" role="status" aria-live="polite">{{ copyState }}</p>
     </div>
 
-    <aside class="settings-side-panel mcp-info-panel">
+    <aside class="settings-side-panel mcp-info-panel glass-surface">
       <h2>接入信息</h2>
       <dl class="mcp-paths">
         <div><dt>传输协议</dt><dd>Streamable HTTP</dd></div>

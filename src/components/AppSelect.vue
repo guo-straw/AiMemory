@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
     <span class="app-select-label">{{ selectedLabel }}</span><ChevronDown :size="14" aria-hidden="true" />
   </button>
   <Teleport :to="portalTarget">
-    <div v-if="opened" :id="listId" ref="list" class="app-select-list" role="listbox" :aria-label="attrs['aria-label'] as string | undefined" :style="menuStyle" :data-testid="listTestId" @scroll="scrollTop = ($event.target as HTMLElement).scrollTop" @keydown="keydown">
+    <div v-if="opened" :id="listId" ref="list" class="app-select-list glass-raised" role="listbox" :aria-label="attrs['aria-label'] as string | undefined" :style="menuStyle" :data-color-scheme="menuStyle.colorScheme" :data-testid="listTestId" @scroll="scrollTop = ($event.target as HTMLElement).scrollTop" @keydown="keydown">
       <div class="app-select-spacer" role="presentation" :style="{ height: `${options.length * rowHeight}px` }">
         <button v-for="(option, offset) in visibleOptions" :id="`${listId}-${firstVisible + offset}`" :key="option.value" type="button" role="option" tabindex="-1" class="app-select-option" :class="{ active: firstVisible + offset === activeIndex }" :aria-selected="option.value === modelValue" :aria-posinset="firstVisible + offset + 1" :aria-setsize="options.length" :title="option.label" :style="{ top: `${(firstVisible + offset) * rowHeight}px` }" @pointermove="activeIndex = firstVisible + offset" @click="selectOption(firstVisible + offset)">
           <span>{{ option.label }}</span><Check v-if="option.value === modelValue" :size="14" aria-hidden="true" />
@@ -143,12 +143,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.app-select { display: inline-flex; align-items: center; justify-content: space-between; gap: 9px; min-width: 0; max-width: 100%; min-height: 35px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg, #fff); color: var(--fg, #1a1c1f); text-align: left; font-size: 13px; line-height: 1.5; }
+.app-select { display: inline-flex; align-items: center; justify-content: space-between; gap: 9px; min-width: 0; max-width: 100%; min-height: 35px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--bg, #fff); color: var(--fg, #1a1c1f); text-align: left; font-size: 13px; line-height: 1.5; }
 .app-select:hover:not(:disabled) { border-color: var(--accent-line, #b8caff); }
 .app-select[aria-expanded=true] { border-color: var(--accent); }
 .app-select > svg { flex-shrink: 0; color: var(--muted); }
 .app-select-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.app-select-list { position: fixed; z-index: 10000; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg, #fff); color: var(--fg, #1a1c1f); box-shadow: 0 8px 28px #00000020; overscroll-behavior: contain; font: 13px/1.5 var(--font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); }
+.app-select-list { position: fixed; z-index: 10000; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; padding: 4px; border-radius: var(--radius-control); color: var(--fg); overscroll-behavior: contain; font: 13px/1.5 var(--font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); }
 .app-select-spacer { position: relative; }
 .app-select-option { position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; box-sizing: border-box; width: 100%; height: 36px; min-height: 36px; margin: 0; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; text-align: left; }
 .app-select-option > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

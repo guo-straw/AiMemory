@@ -11,6 +11,7 @@ const emit = defineEmits<{ change: [theme: ThemeConfig]; back: [] }>();
 const draft = reactive<ThemeConfig>({ ...props.theme });
 const colorNames = { accent: '强调色', background: '背景', foreground: '前景' };
 const accents = [
+  { value: '#3D7EA6', name: '雾蓝' }, { value: '#9CC9E2', name: '浅蓝' },
   { value: '#3566F0', name: '蓝色' }, { value: '#7564BE', name: '紫色' },
   { value: '#137968', name: '青绿' }, { value: '#9B5421', name: '赭色' },
 ];
@@ -141,12 +142,12 @@ async function importFile() {
           </div>
           <div class="theme-row"><div><h2>字体</h2></div><div class="theme-controls"><AppSelect :model-value="draft.font" :options="fontOptions" class="theme-pill" aria-label="界面字体" data-testid="theme-font" @update:model-value="value => change('font', value)" /></div></div>
         </div>
-        <footer class="theme-actions"><button type="button" class="button" :disabled="busy" data-testid="theme-import" @click="importFile"><Upload :size="15" />导入主题</button><button type="button" class="text-button" data-testid="theme-reset" @click="apply({ ...DEFAULT_THEME }); message = '已恢复默认 ChatGPT 主题'"><RefreshCw :size="15" />恢复默认</button></footer>
+        <footer class="theme-actions"><button type="button" class="button" :disabled="busy" data-testid="theme-import" @click="importFile"><Upload :size="15" />导入主题</button><button type="button" class="text-button" data-testid="theme-reset" @click="apply({ ...DEFAULT_THEME }); message = `已恢复默认${DEFAULT_THEME.preset}主题`"><RefreshCw :size="15" />恢复默认</button></footer>
         <p v-if="fileError" class="inline-error" role="alert">{{ fileError }}</p>
         <p class="theme-message" role="status" aria-live="polite">{{ message }}</p>
         <textarea v-if="copiedJson" ref="copyField" class="theme-json" :value="copiedJson" readonly aria-label="可手动复制的主题 JSON" />
       </div>
-      <aside class="theme-preview" aria-label="外观实时预览">
+      <aside class="theme-preview glass-surface" aria-label="外观实时预览">
         <h2>实时预览</h2>
         <section class="theme-reading-preview" aria-label="阅读预览">
           <header class="preview-toolbar"><BookOpen :size="16" /><span>记忆工作台</span></header>
@@ -164,7 +165,7 @@ async function importFile() {
 </template>
 
 <style scoped>
-.theme-page { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 34px 44px 40px; color: var(--fg); background: var(--bg); }
+.theme-page { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 34px 44px 40px; color: var(--fg); }
 .theme-back { padding: 0; color: var(--accent-text); font-size: var(--font-size-body); margin-bottom: 24px; }
 .theme-page-heading { margin-bottom: 24px; }
 .theme-page-heading h1 { font-size: var(--font-size-page); font-weight: 650; }
@@ -197,7 +198,7 @@ async function importFile() {
 .theme-message { color: var(--muted); font-size: var(--font-size-label); line-height: 1.7; margin-top: 12px; overflow-wrap: anywhere; }
 .theme-message:empty { margin-top: 0; }
 .theme-json { display: block; width: 100%; height: 160px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 13px; margin-top: 15px; font: 12px/1.6 Menlo, Consolas, monospace; resize: vertical; }
-.theme-preview { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: 10px; background: var(--side); }
+.theme-preview { min-width: 0; padding: 24px; border-radius: var(--radius-panel); }
 .theme-preview > h2 { font-size: var(--font-size-body); font-weight: 550; margin-bottom: 18px; }
 .theme-reading-preview { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
 .preview-toolbar { display: flex; align-items: center; gap: 9px; padding: 14px 18px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--font-size-label); }
@@ -209,6 +210,6 @@ async function importFile() {
 .preview-content blockquote { margin: 16px 0; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface); color: var(--muted); font-size: var(--font-size-label); line-height: 1.8; }
 .preview-content a { display: inline-block; color: var(--accent-text); font-size: var(--font-size-label); text-decoration: none; }
 .preview-content a:hover { text-decoration: underline; }
-@media (max-width: 1050px) { .theme-page { padding: 30px; } .theme-layout { grid-template-columns: minmax(0, 1fr); max-width: 680px; gap: 24px; } }
+@media (max-width: 1100px) { .theme-page { padding: 30px; } .theme-layout { grid-template-columns: minmax(0, 1fr); max-width: 680px; gap: 24px; } }
 @media (max-width: 700px) { .theme-page { padding: 27px 24px; } .theme-row { grid-template-columns: minmax(0, 1fr); gap: 12px; } .theme-controls { justify-content: flex-start; flex-wrap: wrap; } .theme-actions { flex-wrap: wrap; } .theme-preset-row { flex-wrap: wrap; gap: 10px; } .theme-preset { flex-basis: 100%; } .theme-preview { padding: 18px; } }
 </style>

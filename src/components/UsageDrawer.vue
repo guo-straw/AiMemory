@@ -18,13 +18,15 @@ onMounted(() => dialog.value?.showModal());
 </template>
 
 <style scoped>
-.usage-drawer { position: fixed; inset: 0 0 0 auto; width: min(580px, 100vw); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; border-left: 1px solid var(--line); color: var(--fg); background: var(--bg); box-shadow: -10px 0 40px #00000013; overflow: hidden; }
+.usage-drawer { position: fixed; isolation: isolate; inset: var(--shell-gap) var(--shell-gap) var(--shell-gap) auto; width: min(580px, calc(100vw - 2 * var(--shell-gap))); max-width: none; height: auto; max-height: none; margin: 0; padding: 0; border-radius: var(--radius-shell); background: transparent; color: var(--fg); overflow: hidden; }
+/* Keep the drawer's fixed dropdown portal anchored to the viewport. */
+.usage-drawer::before { content: ''; position: absolute; inset: 0; z-index: -1; }
 .usage-drawer[open] { display: flex; flex-direction: column; }
-.usage-drawer.wide { width: min(850px, 100vw); }
-.usage-drawer::backdrop { background: #161b2a55; }
+.usage-drawer.wide { width: min(850px, calc(100vw - 2 * var(--shell-gap))); }
+.usage-drawer::backdrop { background: var(--scrim); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
 h2 { margin: 0; font-size: 14px; font-weight: 600; }
-.usage-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 24px; overscroll-behavior: contain; }
+.usage-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 24px; overscroll-behavior: contain; background: var(--bg); }
 footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--line); flex: 0 0 auto; }
 @media (max-width: 600px) { .usage-drawer-body { padding: 20px; } header, footer { padding: 16px 20px; } }
 </style>

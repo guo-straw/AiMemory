@@ -4,24 +4,23 @@
 
 知迹是一款 macOS 和 Windows 桌面应用，帮你找回代码背后的决定。它把 Codex 或 DeepSeek Harness 对话中的结论和原文依据保存为本地 Markdown，按 Git 仓库整理。换一个会话，编码助手也能通过模型上下文协议（MCP）查到这项决定，以及当时为什么这样做。
 
-**v0.2.6 发布亮点**
+**v0.2.7 发布亮点**
 
-- **双来源归档与用量。** 新增 DeepSeek Harness，保留 Codex 兼容与已有归档进度；归档来源可独立选择，用量可合并或按来源筛选。
-- **记忆星图。** 支持 35%–1600% 缩放，标题随缩放渐隐渐显，仓库图例自动换行。
-- **设置切换更稳定。** 改进设置分类切换时的布局与保存按钮占位，减少页面跳动。
-- **官方模型参考定价。** 按官方模型 ID、日期、档位和上下文估算费用，不代表网关实际账单；付费缓存写入缺少 TTL 时仍保留未定价。
+- **玻璃拟态外观。** 导航、卡片和弹窗采用磨砂玻璃，正文和表格使用实色底。可选择浅色玻璃拟态或石墨夜色。
+- **短动效。** 页面切换、侧栏与浮层增加过渡，跟随系统的「减少动态效果」设置。
+- **键盘浏览。** 搜索结果支持方向键浏览和 Enter 打开。窄窗口返回列表时保留滚动位置和焦点。
 
-升级会沿用原来的记忆库、模型配置和归档进度。[查看 v0.2.6 发布说明](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.6)
+升级会沿用原来的记忆库、模型配置、主题配置和归档进度。[查看 v0.2.7 发布说明](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.7)
 
-## 下载 v0.2.6
+## 下载 v0.2.7
 
 | 平台 | 安装包 |
 | --- | --- |
-| macOS · Apple 芯片（M 系列） | [下载 ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.6/KnowTrace_0.2.6_aarch64.dmg) |
-| macOS · Intel | [下载 x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.6/KnowTrace_0.2.6_x64.dmg) |
-| Windows · x64 | [下载安装程序](https://github.com/guo-straw/AiMemory/releases/download/v0.2.6/KnowTrace_0.2.6_x64-setup.exe) |
+| macOS · Apple 芯片（M 系列） | [下载 ARM64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.7/KnowTrace_0.2.7_aarch64.dmg) |
+| macOS · Intel | [下载 x64 DMG](https://github.com/guo-straw/AiMemory/releases/download/v0.2.7/KnowTrace_0.2.7_x64.dmg) |
+| Windows · x64 | [下载安装程序](https://github.com/guo-straw/AiMemory/releases/download/v0.2.7/KnowTrace_0.2.7_x64-setup.exe) |
 
-历史版本：[v0.2.5](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.5)。
+历史版本 [v0.2.6](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.6) · [v0.2.5](https://github.com/guo-straw/AiMemory/releases/tag/v0.2.5)
 
 macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序未签名。
 
@@ -35,7 +34,8 @@ macOS 安装包使用临时签名，未经 Apple 公证。Windows 安装程序�
 - **按代码归档和关联。** 同一轮涉及多个 Git 仓库时，前端、后端的记忆分别归入对应仓库。同一 Git 仓库中的代码仍归在一起；同文件的独立修改、功能依赖和跨仓库协作可以互相关联，在详情和记忆星图中沿关联阅读。
 - **探索记忆星图。** 顶部仓库图例自动换行，无需横向滚动；支持 35%–1600% 缩放。标题随缩放比例逐步显隐，缩至 55% 及以下时全部隐藏，充分放大后显示可视绘图区内每个节点的完整标题；标签密度可调。
 - **管理仓库。** 右键侧栏或设置页中的仓库可重命名或删除。删除会移除关联，并将记忆文件放入记忆库的 `.aimemory/trash` 本地回收目录，不改动原始 Git 项目。后续新归档仍可重新接入该仓库。
-- **平滑浏览。** 列表、正文和设置页支持连续变速的滚轮滚动，连续滚动平顺提速，停止后逐渐减速；仓库右键菜单使用浅色背景高亮。
+- **平滑浏览。** 列表、正文和设置页支持连续变速的滚轮滚动，页面切换和浮层开合提供短动效，并跟随系统的「减少动态效果」设置。搜索后可用方向键浏览结果，按 Enter 打开记忆。
+- **玻璃拟态外观。** 默认在导航、卡片和弹窗使用磨砂玻璃，正文和数据表格保留实色底。在「设置与接入 → 主题与外观」可切换浅色、石墨夜色或自定义颜色。
 
 <details>
 <summary>查看记忆写入与更新流程图</summary>

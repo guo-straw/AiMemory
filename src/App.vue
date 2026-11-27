@@ -65,6 +65,8 @@ const editingMemory = ref<MemoryRecord | null>(null);
 const editorKey = ref(0);
 const editor = ref<InstanceType<typeof MemoryEditor>>();
 const searchInput = ref<HTMLInputElement>();
+const resultScroll = ref<HTMLElement>();
+const readerTitle = ref<HTMLElement>();
 const loading = ref(true);
 const changingWorkspace = ref(false);
 const searching = ref(false);
@@ -75,6 +77,10 @@ const status = ref('');
 const narrowReader = ref(false);
 const sidebarOpen = ref(false);
 const sidebarCollapsed = ref(false);
+const sidebarToggle = ref<HTMLButtonElement>();
+const sidebarMedia = window.matchMedia('(max-width: 700px)');
+const compactSidebar = ref(sidebarMedia.matches);
+const sidebarExpanded = computed(() => compactSidebar.value ? sidebarOpen.value : !sidebarCollapsed.value);
 const relatedHistory = ref<string[]>([]);
 const pendingNavigation = ref<(() => void) | null>(null);
 const repositoryDialog = ref(false);
@@ -89,6 +95,9 @@ const actionError = ref('');
 const savingRepository = ref(false);
 const repositoryMenuElement = ref<HTMLElement>();
 const repositoryActionInput = ref<HTMLInputElement>();
+const modalOpen = computed(() => !!(repositoryAction.value || repositoryDialog.value || pendingNavigation.value));
+let repositoryMenuTrigger: HTMLElement | undefined;
+let modalTrigger: HTMLElement | undefined;
 let searchVersion = 0;
 let readVersion = 0;
 let searchTimer: ReturnType<typeof setTimeout>;
@@ -131,7 +140,7 @@ function navigate(action: () => void) {
     return;
   }
   action();
-  sidebarOpen.value = false;
+  if (sidebarOpen.value) dismissSidebar();
 }
 
 function changeTheme(next: ThemeConfig) {
@@ -196,8 +205,18 @@ function discardAndNavigate() {
 }
 
 function toggleSidebar() {
-  if (window.innerWidth <= 700) sidebarOpen.value = !sidebarOpen.value;
+  if (compactSidebar.value) sidebarOpen.value = !sidebarOpen.value;
   else sidebarCollapsed.value = !sidebarCollapsed.value;
+}
+
+function dismissSidebar() {
+  sidebarOpen.value = false;
+  sidebarToggle.value?.focus();
+}
+
+function updateSidebarLayout(event: MediaQueryListEvent) {
+  compactSidebar.value = event.matches;
+  sidebarOpen.value = false;
 }
 
 function showWorkbench(repositoryId = activeRepositoryId.value) {
@@ -265,7 +284,13 @@ async function readMemory(id: string, reveal = true) {
     const memory = await memoryRead(id);
     if (version !== readVersion) return;
     selectedMemory.value = memory;
-    if (reveal) narrowReader.value = true;
+    if (reveal) {
+      narrowReader.value = true;
+      if (window.innerWidth <= 1050) {
+        await nextTick();
+        readerTitle.value?.focus({ preventScroll: true });
+      }
+    }
   } catch (cause) {
     if (version === readVersion) error.value = String(cause);
   } finally {
@@ -315,6 +340,24 @@ function submitSearch(event?: KeyboardEvent) {
   if (event?.isComposing) return;
   event?.preventDefault();
   if (workspace.value && !loading.value) void searchMemories();
+}
+
+function clearSearch() {
+  query.value = '';
+  searchInput.value?.focus();
+}
+
+function moveSearchFocus(event: KeyboardEvent) {
+  if (event.isComposing || searching.value) return;
+  const buttons = Array.from(resultScroll.value?.querySelectorAll<HTMLButtonElement>('.memory-result') ?? []);
+  if (!buttons.length) return;
+  const current = buttons.indexOf(event.currentTarget as HTMLButtonElement);
+  const down = event.key === 'ArrowDown';
+  const next = current < 0 ? (down ? 0 : buttons.length - 1) : current + (down ? 1 : -1);
+  const target = next < 0 ? searchInput.value : buttons[next];
+  if (!target) return;
+  event.preventDefault();
+  target.focus();
 }
 
 function useKeywordSearch() {
@@ -510,7 +553,10 @@ async function openRelated(id: string) {
 function returnToPrevious() {
   const id = relatedHistory.value.pop();
   if (id) void readMemory(id);
-  else narrowReader.value = false;
+  else {
+    narrowReader.value = false;
+    void nextTick(() => (resultScroll.value?.querySelector<HTMLButtonElement>('.memory-result.selected') ?? searchInput.value)?.focus({ preventScroll: true }));
+  }
 }
 
 function startEditor(memory: MemoryRecord | null = null) {
@@ -597,7 +643,8 @@ async function addRepository() {
 }
 
 async function openRepositoryMenu(event: MouseEvent | KeyboardEvent, repository: Repository) {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  repositoryMenuTrigger = event.currentTarget as HTMLElement;
+  const rect = repositoryMenuTrigger.getBoundingClientRect();
   const x = 'clientX' in event ? event.clientX : rect.left + 20;
   const y = 'clientY' in event ? event.clientY : rect.bottom;
   repositoryMenu.value = { repository, x, y };
@@ -618,6 +665,10 @@ function moveRepositoryMenuFocus(event: KeyboardEvent) {
 
 function closeRepositoryMenu() {
   repositoryMenu.value = null;
+}
+
+function focusModal(element: Element) {
+  element.querySelector<HTMLElement>('[data-initial-focus]')?.focus({ preventScroll: true });
 }
 
 function startRepositoryAction(kind: 'rename' | 'delete') {
@@ -679,9 +730,15 @@ function formatDate(value: string) {
 }
 
 function keydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    closeRepositoryMenu();
-    if (!savingRepository.value) repositoryAction.value = null;
+  if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing) {
+    if (repositoryMenu.value) {
+      closeRepositoryMenu();
+      repositoryMenuTrigger?.focus({ preventScroll: true });
+    }
+    else if (repositoryAction.value && !savingRepository.value) repositoryAction.value = null;
+    else if (repositoryDialog.value && !addingRepository.value) repositoryDialog.value = false;
+    else if (pendingNavigation.value) pendingNavigation.value = null;
+    else if (sidebarOpen.value) dismissSidebar();
   }
   if (!(event.metaKey || event.ctrlKey)) return;
   if (event.key.toLowerCase() === 'k') {
@@ -699,8 +756,22 @@ function keydown(event: KeyboardEvent) {
   }
 }
 
+watch(modalOpen, open => {
+  if (open) {
+    const active = document.activeElement as HTMLElement;
+    modalTrigger = repositoryMenuElement.value?.contains(active) ? repositoryMenuTrigger : active;
+  } else {
+    void nextTick(() => {
+      const target = modalTrigger?.isConnected && !modalTrigger.closest('[inert]') ? modalTrigger : sidebarToggle.value;
+      target?.focus({ preventScroll: true });
+      modalTrigger = undefined;
+    });
+  }
+});
+
 watch([activeRepositoryId, query, searchMode], () => {
   clearTimeout(searchTimer);
+  if (resultScroll.value) resultScroll.value.scrollTop = 0;
   if (!workspace.value || loading.value) return;
   searchVersion++;
   searchError.value = '';
@@ -711,6 +782,7 @@ watch([activeRepositoryId, query, searchMode], () => {
 
 onMounted(async () => {
   stopSmoothWheelScroll = installSmoothWheelScroll();
+  sidebarMedia.addEventListener('change', updateSidebarLayout);
   document.addEventListener('keydown', keydown);
   document.addEventListener('pointerdown', closeRepositoryMenu);
   window.addEventListener('resize', closeRepositoryMenu);
@@ -752,6 +824,7 @@ onBeforeUnmount(() => {
   clearTimeout(statusTimer);
   clearInterval(archiveTimer);
   document.removeEventListener('keydown', keydown);
+  sidebarMedia.removeEventListener('change', updateSidebarLayout);
   document.removeEventListener('pointerdown', closeRepositoryMenu);
   window.removeEventListener('resize', closeRepositoryMenu);
   document.removeEventListener('scroll', closeRepositoryMenu, true);
@@ -762,8 +835,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell" :class="{ 'sidebar-open': sidebarOpen, 'sidebar-collapsed': sidebarCollapsed }">
-    <button v-if="sidebarOpen" class="sidebar-scrim" aria-label="收起导航" @click="sidebarOpen = false" />
-    <aside class="sidebar">
+    <Transition name="scrim">
+      <button v-if="sidebarOpen" class="sidebar-scrim" aria-label="收起导航" :inert="modalOpen" @click="dismissSidebar" />
+    </Transition>
+    <aside id="workspace-sidebar" class="sidebar glass-surface" :inert="!sidebarExpanded || modalOpen">
       <div class="brand">
         <span class="brand-mark">
           <img :src="brandMark" width="33" height="33" alt="" />
@@ -772,15 +847,15 @@ onBeforeUnmount(() => {
       </div>
       <div class="sidebar-section-label">工作空间</div>
       <nav class="primary-nav" aria-label="工作空间">
-        <button :class="{ active: view === 'workbench' }" @click="showWorkbench()">
+        <button :class="{ active: view === 'workbench' }" :aria-current="view === 'workbench' ? 'page' : undefined" @click="showWorkbench()">
           <BookOpen :size="18" />记忆工作台</button>
-        <button :class="{ active: view === 'graph' }" :disabled="!workspace" data-testid="star-map-navigation" @click="showStarMap()">
+        <button :class="{ active: view === 'graph' }" :aria-current="view === 'graph' ? 'page' : undefined" :disabled="!workspace" data-testid="star-map-navigation" @click="showStarMap()">
           <Orbit :size="18" />记忆星图</button>
-        <button :class="{ active: view === 'editor' }" :disabled="!workspace || saving" @click="startEditor()">
+        <button :class="{ active: view === 'editor' }" :aria-current="view === 'editor' ? 'page' : undefined" :disabled="!workspace || saving" @click="startEditor()">
           <SquarePen :size="18" />新增记忆</button>
-        <button :class="{ active: view === 'archive' }" @click="navigate(() => { view = 'archive'; })" data-testid="archive-navigation">
+        <button :class="{ active: view === 'archive' }" :aria-current="view === 'archive' ? 'page' : undefined" @click="navigate(() => { view = 'archive'; })" data-testid="archive-navigation">
           <Activity :size="18" />归档与用量</button>
-        <button :class="{ active: ['settings', 'theme', 'transfer'].includes(view) }" @click="showSettingsSection('settings')">
+        <button :class="{ active: view === 'settings' }" :aria-current="view === 'settings' ? 'page' : undefined" @click="showSettingsSection('settings')">
           <Settings2 :size="18" />设置与接入</button>
       </nav>
       <div class="sidebar-divider" />
@@ -803,14 +878,14 @@ onBeforeUnmount(() => {
         <Plus :size="15" />接入第一个仓库</button>
       <ArchiveSidebarStatus v-if="canUseNative && (workspace || loading)" :state="archiveSidebarState" @navigate="openArchiveDestination" />
     </aside>
-    <main class="main-shell">
-      <header class="topbar">
-        <button class="icon-button sidebar-toggle" aria-label="切换侧栏" @click="toggleSidebar">
+    <main class="main-shell" :inert="modalOpen">
+      <header class="topbar glass-surface">
+        <button ref="sidebarToggle" class="icon-button sidebar-toggle" aria-label="切换侧栏" aria-controls="workspace-sidebar" :aria-expanded="sidebarExpanded" @click="toggleSidebar">
           <PanelLeft :size="17" />
         </button>
         <span class="workspace-label">个人空间</span>
         <span class="breadcrumb-slash">/</span>
-        <span>{{ pageTitle }}</span>
+        <span :key="pageTitle" class="current-page-title">{{ pageTitle }}</span>
         <span class="storage-label">
           <Database :size="15" />本机存储</span>
       </header>
@@ -842,7 +917,7 @@ onBeforeUnmount(() => {
           <FolderOpen :size="17" />选择记忆库目录</button>
       </section>
       <div v-else-if="view === 'workbench'" class="workbench" :class="{ 'reader-visible': narrowReader }">
-        <section class="memory-list" aria-label="仓库记忆">
+        <section class="memory-list glass-surface" aria-label="仓库记忆">
           <div class="list-head">
             <div class="list-heading-row">
               <h1>仓库记忆</h1>
@@ -854,10 +929,10 @@ onBeforeUnmount(() => {
               <GitBranch :size="15" />
               <span>{{ activeRepository?.name ?? '所有仓库' }}</span>
             </p>
-            <div class="search-field">
+            <div class="search-field" :class="{ 'is-searching': searching }">
               <Search :size="19" />
-              <input ref="searchInput" v-model="query" aria-label="搜索记忆" :placeholder="activeRepository ? '搜索当前仓库的记忆' : '搜索所有仓库的记忆'" data-testid="memory-search" @keydown.enter="submitSearch($event)" />
-              <button v-if="query" class="icon-button" aria-label="清空搜索" @click="query = ''">
+              <input ref="searchInput" v-model="query" aria-label="搜索记忆" :placeholder="activeRepository ? '搜索当前仓库的记忆' : '搜索所有仓库的记忆'" data-testid="memory-search" @keydown.enter="submitSearch($event)" @keydown.up="moveSearchFocus" @keydown.down="moveSearchFocus" />
+              <button v-if="query" class="icon-button" aria-label="清空搜索" @click="clearSearch">
                 <X :size="15" />
               </button>
               <kbd v-else>⌘ K</kbd>
@@ -869,10 +944,10 @@ onBeforeUnmount(() => {
             <div class="list-result-label">
               <span>{{ query.trim() ? '搜索结果' : '最近记忆' }}<b>{{ results.length }}</b>
               </span>
-              <span>{{ searching ? '正在检索…' : searchError ? '检索未完成' : semanticResult ? `${searchLabel} · 前 5 条` : query.trim() ? '关键词匹配' : '按更新时间' }}</span>
+              <span role="status">{{ searching ? '正在检索…' : searchError ? '检索未完成' : semanticResult ? `${searchLabel} · 前 5 条` : query.trim() ? '关键词匹配' : '按更新时间' }}</span>
             </div>
           </div>
-          <div class="result-scroll">
+          <div ref="resultScroll" class="result-scroll" :aria-busy="searching">
             <div v-if="searchError" class="search-error" role="alert" data-testid="search-error">
               <h2>{{ semanticActive ? '语义检索暂不可用' : '检索暂不可用' }}</h2>
               <p>{{ searchError }}</p>
@@ -882,7 +957,7 @@ onBeforeUnmount(() => {
             <p v-if="semanticResult?.fallbackReason" class="search-index-note" role="status">已使用本地关键词：{{ semanticResult.fallbackReason }}</p>
             <p v-else-if="semanticResult?.pendingEmbeddings" class="search-index-note">{{ semanticResult.pendingEmbeddings }} 条向量未就绪，{{ semanticResult.searchMode === 'keyword' ? '当前使用本地关键词。' : '已用关键词补查。' }}</p>
             <div v-for="memory in results" :key="memory.id" class="memory-result-group">
-            <button class="memory-result" :class="{ selected: selectedMemory?.id === memory.id }" :data-memory-id="memory.id" @click="selectMemory(memory.id)">
+            <button class="memory-result" :class="{ selected: selectedMemory?.id === memory.id }" :aria-current="selectedMemory?.id === memory.id || undefined" :data-memory-id="memory.id" @click="selectMemory(memory.id)" @keydown.up="moveSearchFocus" @keydown.down="moveSearchFocus">
               <span class="result-meta">
                 <span>
                   <i />{{ memory.kind || '工作记录' }}</span>
@@ -915,7 +990,7 @@ onBeforeUnmount(() => {
               <Search v-if="query" :size="26" />
               <FolderOpen v-else :size="26" />
               <h2>{{ query ? '没有找到相关记忆' : '仓库记忆会出现在这里' }}</h2>
-              <button v-if="query" class="button" @click="query = ''">清空搜索</button>
+              <button v-if="query" class="button" @click="clearSearch">清空搜索</button>
               <button v-else class="button" @click="startEditor()">
                 <Plus :size="15" />新增记忆</button>
             </div>
@@ -953,7 +1028,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <div v-if="selectedMemory" class="reader-scroll" :class="{ 'is-reading': reading }" data-testid="memory-detail">
+          <div v-if="selectedMemory" :key="selectedMemory.id" class="reader-scroll" :class="{ 'is-reading': reading }" data-testid="memory-detail">
             <button v-if="graphReaderActive" class="related-return" data-testid="memory-return-star-map" @click="showStarMap(null)">
               <ArrowLeft :size="15" />返回记忆星图
             </button>
@@ -964,7 +1039,7 @@ onBeforeUnmount(() => {
               <span class="kind-chip">{{ selectedMemory.kind }}</span>
               <span class="memory-id">{{ selectedMemory.id }}</span>
             </div>
-            <h1>{{ selectedMemory.title }}</h1>
+            <h1 ref="readerTitle" tabindex="-1">{{ selectedMemory.title }}</h1>
             <div class="memory-meta">
               <span>
                 <GitBranch :size="15" />{{ currentRepository?.name }}</span>
@@ -1037,50 +1112,59 @@ onBeforeUnmount(() => {
       </section>
       <MemoryStarMap v-if="workspace && graph" v-show="view === 'graph'" ref="starMap" :active="view === 'graph'" :graph="graph" :repositories="repositories" :initial-memory-id="graphFocusId" @open-memory="openGraphMemory" />
     </main>
-    <div v-if="status" class="toast" role="status">
-      <Check :size="16" />{{ status }}</div>
+    <Transition name="notice">
+      <div v-if="status" class="toast glass-raised" role="status"><Check :size="16" />{{ status }}</div>
+    </Transition>
     <MemoryUpdateLog v-if="updateLogOpen && selectedMemory" :memory="selectedMemory" @close="updateLogOpen = false" />
-    <div v-if="repositoryMenu" ref="repositoryMenuElement" class="repository-menu" role="menu" aria-label="仓库操作" :style="{ left: `${repositoryMenu.x}px`, top: `${repositoryMenu.y}px` }" @pointerdown.stop @contextmenu.prevent @keydown.down.prevent="moveRepositoryMenuFocus" @keydown.up.prevent="moveRepositoryMenuFocus">
-      <button role="menuitem" @click="startRepositoryAction('rename')"><SquarePen :size="15" />重命名</button>
-      <button role="menuitem" class="danger-text" @click="startRepositoryAction('delete')"><Trash2 :size="15" />删除仓库</button>
-    </div>
-    <div v-if="repositoryAction" class="modal-backdrop">
-      <form class="modal" :role="repositoryAction.kind === 'delete' ? 'alertdialog' : 'dialog'" aria-modal="true" aria-labelledby="repository-action-title" @submit.prevent="saveRepositoryAction">
-        <div class="modal-heading"><h2 id="repository-action-title">{{ repositoryAction.kind === 'rename' ? '重命名仓库' : '删除仓库' }}</h2><button type="button" class="icon-button" aria-label="关闭仓库操作" :disabled="savingRepository" @click="repositoryAction = null"><X :size="18" /></button></div>
-        <label v-if="repositoryAction.kind === 'rename'" class="field">仓库名称<input ref="repositoryActionInput" v-model="actionName" required :disabled="savingRepository" /></label>
-        <template v-else><p>删除「{{ repositoryAction.repository.name }}」及其 {{ repositoryAction.repository.memoryCount }} 条记忆？相关记忆的关联也会移除。</p><p>记忆文件将移入本地记忆库的 .aimemory/trash 目录。原始 Git 项目不受影响；后续新归档仍可重新接入此仓库。</p></template>
-        <p v-if="actionError" class="inline-error" role="alert">{{ actionError }}</p>
-        <footer><button type="button" class="button" :disabled="savingRepository" @click="repositoryAction = null">取消</button><button class="button" :class="repositoryAction.kind === 'delete' ? 'danger-button' : 'primary'" :disabled="savingRepository">{{ savingRepository ? '正在处理…' : repositoryAction.kind === 'rename' ? '保存名称' : '删除仓库' }}</button></footer>
-      </form>
-    </div>
-    <div v-if="pendingNavigation" class="modal-backdrop">
-      <section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="discard-title">
-        <h2 id="discard-title">有未保存的更改</h2>
-        <p>离开此页面后，本次更改会被放弃。</p>
-        <footer>
-          <button class="button" @click="pendingNavigation = null">继续编辑</button>
-          <button class="button primary" @click="discardAndNavigate">放弃更改并离开</button>
-        </footer>
-      </section>
-    </div>
-    <div v-if="repositoryDialog" class="modal-backdrop">
-      <form class="modal" role="dialog" aria-modal="true" aria-labelledby="repository-title" @submit.prevent="addRepository">
-        <div class="modal-heading">
-          <h2 id="repository-title">接入 Git 仓库</h2>
-          <button type="button" class="icon-button" aria-label="关闭接入仓库" :disabled="addingRepository" @click="repositoryDialog = false">
-            <X :size="18" />
-          </button>
-        </div>
-        <label class="field">仓库名称<input v-model="repositoryName" required autofocus placeholder="frontend-web" data-testid="repository-name" />
-        </label>
-        <label class="field">Git 远程地址<input v-model="repositoryRemote" required placeholder="https://github.com/team/frontend-web.git" data-testid="repository-remote" />
-        </label>
-        <p v-if="repositoryError" class="inline-error" role="alert">{{ repositoryError }}</p>
-        <footer>
-          <button type="button" class="button" :disabled="addingRepository" @click="repositoryDialog = false">取消</button>
-          <button class="button primary" :disabled="addingRepository">{{ addingRepository ? '正在接入…' : '接入仓库' }}</button>
-        </footer>
-      </form>
-    </div>
+    <Transition name="popover">
+      <div v-if="repositoryMenu" ref="repositoryMenuElement" class="repository-menu glass-raised" role="menu" aria-label="仓库操作" :style="{ left: `${repositoryMenu.x}px`, top: `${repositoryMenu.y}px` }" @pointerdown.stop @contextmenu.prevent @keydown.down.prevent="moveRepositoryMenuFocus" @keydown.up.prevent="moveRepositoryMenuFocus">
+        <button role="menuitem" @click="startRepositoryAction('rename')"><SquarePen :size="15" />重命名</button>
+        <button role="menuitem" class="danger-text" @click="startRepositoryAction('delete')"><Trash2 :size="15" />删除仓库</button>
+      </div>
+    </Transition>
+    <Transition name="overlay" @enter="focusModal">
+      <div v-if="repositoryAction" class="modal-backdrop">
+        <form class="modal glass-raised" :role="repositoryAction.kind === 'delete' ? 'alertdialog' : 'dialog'" aria-modal="true" aria-labelledby="repository-action-title" @submit.prevent="saveRepositoryAction">
+          <div class="modal-heading"><h2 id="repository-action-title">{{ repositoryAction.kind === 'rename' ? '重命名仓库' : '删除仓库' }}</h2><button type="button" class="icon-button" aria-label="关闭仓库操作" :disabled="savingRepository" @click="repositoryAction = null"><X :size="18" /></button></div>
+          <label v-if="repositoryAction.kind === 'rename'" class="field">仓库名称<input ref="repositoryActionInput" v-model="actionName" required :disabled="savingRepository" data-initial-focus /></label>
+          <template v-else><p>删除「{{ repositoryAction.repository.name }}」及其 {{ repositoryAction.repository.memoryCount }} 条记忆？相关记忆的关联也会移除。</p><p>记忆文件将移入本地记忆库的 .aimemory/trash 目录。原始 Git 项目不受影响；后续新归档仍可重新接入此仓库。</p></template>
+          <p v-if="actionError" class="inline-error" role="alert">{{ actionError }}</p>
+          <footer><button type="button" class="button" :disabled="savingRepository" :data-initial-focus="repositoryAction.kind === 'delete' ? '' : undefined" @click="repositoryAction = null">取消</button><button class="button" :class="repositoryAction.kind === 'delete' ? 'danger-button' : 'primary'" :disabled="savingRepository">{{ savingRepository ? '正在处理…' : repositoryAction.kind === 'rename' ? '保存名称' : '删除仓库' }}</button></footer>
+        </form>
+      </div>
+    </Transition>
+    <Transition name="overlay" @enter="focusModal">
+      <div v-if="pendingNavigation" class="modal-backdrop">
+        <section class="modal glass-raised" role="alertdialog" aria-modal="true" aria-labelledby="discard-title">
+          <h2 id="discard-title">有未保存的更改</h2>
+          <p>离开此页面后，本次更改会被放弃。</p>
+          <footer>
+            <button class="button" data-initial-focus @click="pendingNavigation = null">继续编辑</button>
+            <button class="button primary" @click="discardAndNavigate">放弃更改并离开</button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
+    <Transition name="overlay" @enter="focusModal">
+      <div v-if="repositoryDialog" class="modal-backdrop">
+        <form class="modal glass-raised" role="dialog" aria-modal="true" aria-labelledby="repository-title" @submit.prevent="addRepository">
+          <div class="modal-heading">
+            <h2 id="repository-title">接入 Git 仓库</h2>
+            <button type="button" class="icon-button" aria-label="关闭接入仓库" :disabled="addingRepository" @click="repositoryDialog = false">
+              <X :size="18" />
+            </button>
+          </div>
+          <label class="field">仓库名称<input v-model="repositoryName" required data-initial-focus placeholder="frontend-web" data-testid="repository-name" />
+          </label>
+          <label class="field">Git 远程地址<input v-model="repositoryRemote" required placeholder="https://github.com/team/frontend-web.git" data-testid="repository-remote" />
+          </label>
+          <p v-if="repositoryError" class="inline-error" role="alert">{{ repositoryError }}</p>
+          <footer>
+            <button type="button" class="button" :disabled="addingRepository" @click="repositoryDialog = false">取消</button>
+            <button class="button primary" :disabled="addingRepository">{{ addingRepository ? '正在接入…' : '接入仓库' }}</button>
+          </footer>
+        </form>
+      </div>
+    </Transition>
   </div>
 </template>

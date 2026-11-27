@@ -35,7 +35,7 @@ onBeforeUnmount(() => observer.disconnect());
 </script>
 
 <template>
-  <section class="usage-chart-card">
+  <section class="usage-chart-card glass-surface">
     <header><h2>{{ hourly ? '每小时用量' : '每日用量' }}</h2><div class="usage-segments small"><button v-for="option in [{ value: 'tokens' as const, label: 'Tokens' }, { value: 'records' as const, label: '记录' }, { value: 'cost' as const, label: '费用' }]" :key="option.value" :class="{ active: metric === option.value }" :aria-pressed="metric === option.value" @click="metric = option.value">{{ option.label }}</button></div></header>
     <div v-if="metric === 'tokens'" class="usage-legend"><span><i class="fresh" />{{ summary.cacheKnownInput < summary.input ? '其他输入' : '新增输入' }}</span><span><i class="cached" />缓存输入</span><span v-if="summary.cacheWrite"><i class="write" />缓存写入</span><span><i class="output" />输出</span></div>
     <p v-if="metric === 'cost' && summary.pricedRecords < summary.records" class="usage-note">仅显示已定价记录的参考费用</p>

@@ -86,7 +86,7 @@ async function testService() {
 </script>
 
 <template>
-  <section class="model-service" :class="{ 'vector-service': kind === 'embedding' }" :data-testid="`${kind}-service`">
+  <section class="model-service" :class="{ 'vector-service glass-surface': kind === 'embedding' }" :data-testid="`${kind}-service`">
     <header class="model-service-heading">
       <MessagesSquare v-if="kind === 'chat'" :size="18" /><Layers3 v-else :size="18" />
       <h2>{{ kind === 'chat' ? '聊天模型' : '向量模型' }}</h2>
@@ -163,7 +163,7 @@ async function testService() {
 .manual-model { display: grid; gap: 8px; font-size: var(--font-size-label); font-weight: 400; color: var(--muted); margin-top: 3px; }
 .model-hint { font-size: 11px; line-height: 1.7; font-weight: 400; color: var(--muted); margin-top: 7px; }
 .model-service-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; }
-.vector-service { border: 1px solid var(--line); border-radius: 10px; padding: 21px; background: var(--side); }
+.vector-service { border-radius: var(--radius-panel); padding: 24px; }
 @media (min-width: 1051px) {
   .model-service:not(.vector-service) .custom-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; align-items: start; }
   .custom-fields .provider-field, .custom-fields .model-field, .custom-fields .model-service-footer { grid-column: 1 / -1; }
