@@ -66,7 +66,9 @@ const editorKey = ref(0);
 const editor = ref<InstanceType<typeof MemoryEditor>>();
 const searchInput = ref<HTMLInputElement>();
 const resultScroll = ref<HTMLElement>();
+const readerScroll = ref<HTMLElement>();
 const readerTitle = ref<HTMLElement>();
+const readerTitleScrolled = ref(false);
 const loading = ref(true);
 const changingWorkspace = ref(false);
 const searching = ref(false);
@@ -288,6 +290,8 @@ async function readMemory(id: string, reveal = true) {
       narrowReader.value = true;
       if (window.innerWidth <= 1050) {
         await nextTick();
+        if (readerScroll.value) readerScroll.value.scrollTop = 0;
+        readerTitleScrolled.value = false;
         readerTitle.value?.focus({ preventScroll: true });
       }
     }
@@ -296,6 +300,11 @@ async function readMemory(id: string, reveal = true) {
   } finally {
     if (version === readVersion) reading.value = false;
   }
+}
+
+function updateReaderTitle() {
+  if (!readerScroll.value || !readerTitle.value) return;
+  readerTitleScrolled.value = readerTitle.value.getBoundingClientRect().top < readerScroll.value.getBoundingClientRect().top;
 }
 
 async function searchMemories() {
@@ -769,6 +778,8 @@ watch(modalOpen, open => {
   }
 });
 
+watch(() => selectedMemory.value?.id, () => { readerTitleScrolled.value = false; });
+
 watch([activeRepositoryId, query, searchMode], () => {
   clearTimeout(searchTimer);
   if (resultScroll.value) resultScroll.value.scrollTop = 0;
@@ -1012,14 +1023,14 @@ onBeforeUnmount(() => {
           <header class="reader-toolbar">
             <button class="reader-back" @click="returnToPrevious">
               <ArrowLeft :size="16" />返回{{ relatedHistory.length ? '上一条记忆' : '搜索结果' }}</button>
-            <span class="reader-label">
-              <BookOpen :size="16" />记忆详情</span>
+            <span class="reader-label" :class="{ 'is-scrolled': readerTitleScrolled }" :title="readerTitleScrolled ? selectedMemory?.title : undefined" :aria-hidden="readerTitleScrolled || undefined">
+              <BookOpen v-if="!readerTitleScrolled" :size="16" /><span>{{ readerTitleScrolled ? selectedMemory?.title : '记忆详情' }}</span></span>
             <div v-if="selectedMemory" class="reader-actions">
               <button class="icon-button" aria-label="在星图中查看记忆" title="在星图中查看记忆" data-testid="memory-open-star-map" @click="showStarMap(selectedMemory.id)">
                 <Orbit :size="17" />
               </button>
-              <button class="text-button original-file" @click="openOriginal">
-                <FileText :size="15" />打开原文件</button>
+              <button class="text-button original-file" aria-label="打开原文件" title="打开原文件" @click="openOriginal">
+                <FileText :size="15" /><span>打开原文件</span></button>
               <button class="icon-button" aria-label="编辑记忆" title="编辑记忆" @click="startEditor(selectedMemory)">
                 <SquarePen :size="17" />
               </button>
@@ -1028,63 +1039,67 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <div v-if="selectedMemory" :key="selectedMemory.id" class="reader-scroll" :class="{ 'is-reading': reading }" data-testid="memory-detail">
-            <button v-if="graphReaderActive" class="related-return" data-testid="memory-return-star-map" @click="showStarMap(null)">
-              <ArrowLeft :size="15" />返回记忆星图
-            </button>
-            <button v-if="relatedHistory.length" class="related-return" @click="returnToPrevious">
-              <ArrowLeft :size="15" />返回上一条记忆
-            </button>
-            <div class="memory-kicker">
-              <span class="kind-chip">{{ selectedMemory.kind }}</span>
-              <span class="memory-id">{{ selectedMemory.id }}</span>
-            </div>
-            <h1 ref="readerTitle" tabindex="-1">{{ selectedMemory.title }}</h1>
-            <div class="memory-meta">
-              <span>
-                <GitBranch :size="15" />{{ currentRepository?.name }}</span>
-              <span>
-                <Clock3 :size="15" />{{ formatDate(selectedMemory.updatedAt) }}</span>
-            </div>
-            <div v-if="selectedMemory.tags.length" class="memory-tags">
-              <span v-for="tag in selectedMemory.tags" :key="tag"># {{ tag }}</span>
-            </div>
-            <div v-if="selectedMemory.embeddingStatus === 'unconfigured'" class="memory-index-banner" role="status">
-              <Clock3 :size="16" />
-              <span>正文已保存，配置向量 API 后可生成检索索引。</span>
-              <button @click="navigate(() => { view = 'settings'; })">配置向量 API</button>
-            </div>
-            <div v-else-if="selectedMemory.embeddingStatus === 'pending' || selectedMemory.embeddingStatus === 'processing'" class="memory-index-banner" role="status">
-              <Clock3 :size="16" />
-              <span>正文已保存，向量{{ selectedMemory.embeddingStatus === 'processing' ? '正在后台生成' : '等待后台生成' }}。</span>
-              <button @click="openArchiveDestination('archive')">查看归档</button>
-            </div>
-            <div v-else-if="selectedMemory.embeddingStatus === 'failed'" class="memory-index-banner failed" role="status">
-              <span>正文已保存，向量生成失败。{{ selectedMemory.embeddingError }}</span>
-              <button @click="navigate(() => { view = 'archive'; })">查看处理队列</button>
-            </div>
-            <MemoryProvenance :memory="selectedMemory" :adopting="adopting" @adopt="adoptSuggestion" />
-            <MarkdownView :markdown="selectedMemory.markdown" :title="selectedMemory.title" />
-            <div v-if="selectedMemory.source" class="memory-source">
-              <FileText :size="16" />
-              <div>
-                <span>来源</span>
-                <p>{{ selectedMemory.source }}</p>
-              </div>
-            </div>
-            <section v-if="relatedMemories.length" class="related-section">
-              <h2>
-                <Link2 :size="16" />关联记忆<span>{{ relatedMemories.length }}</span>
-              </h2>
-              <button v-for="item in relatedMemories" :key="item.id" class="related-link" :disabled="!item.memory" @click="openRelated(item.id)">
-                <FileText :size="16" />
-                <span>{{ item.memory?.title ?? item.id }}<small>{{ item.memory ? repositories.find(repo => repo.id === item.memory?.repositoryId)?.name : '关联条目暂未找到' }}</small>
-                </span>
-                <ArrowRight :size="16" />
+          <div v-if="selectedMemory" :key="selectedMemory.id" ref="readerScroll" class="reader-scroll" :class="{ 'is-reading': reading, 'title-scrolled': readerTitleScrolled }" data-testid="memory-detail" @scroll.passive="updateReaderTitle">
+            <article class="reader-content">
+              <button v-if="graphReaderActive" class="related-return" data-testid="memory-return-star-map" @click="showStarMap(null)">
+                <ArrowLeft :size="15" />返回记忆星图
               </button>
-            </section>
-            <div class="file-location" :title="selectedMemory.path">
-              <FileText :size="13" />{{ selectedMemory.path }}</div>
+              <button v-if="relatedHistory.length" class="related-return" @click="returnToPrevious">
+                <ArrowLeft :size="15" />返回上一条记忆
+              </button>
+              <header class="memory-heading">
+                <div class="memory-kicker">
+                  <span class="kind-chip">{{ selectedMemory.kind }}</span>
+                  <span class="memory-id">{{ selectedMemory.id }}</span>
+                </div>
+                <h1 ref="readerTitle" tabindex="-1">{{ selectedMemory.title }}</h1>
+                <div class="memory-meta">
+                  <span>
+                    <GitBranch :size="15" />{{ currentRepository?.name }}</span>
+                  <span>
+                    <Clock3 :size="15" />{{ formatDate(selectedMemory.updatedAt) }}</span>
+                </div>
+                <div v-if="selectedMemory.tags.length" class="memory-tags">
+                  <span v-for="tag in selectedMemory.tags" :key="tag"># {{ tag }}</span>
+                </div>
+              </header>
+              <div v-if="selectedMemory.embeddingStatus === 'unconfigured'" class="memory-index-banner" role="status">
+                <Clock3 :size="16" />
+                <span>正文已保存，配置向量 API 后可生成检索索引。</span>
+                <button @click="navigate(() => { view = 'settings'; })">配置向量 API</button>
+              </div>
+              <div v-else-if="selectedMemory.embeddingStatus === 'pending' || selectedMemory.embeddingStatus === 'processing'" class="memory-index-banner" role="status">
+                <Clock3 :size="16" />
+                <span>正文已保存，向量{{ selectedMemory.embeddingStatus === 'processing' ? '正在后台生成' : '等待后台生成' }}。</span>
+                <button @click="openArchiveDestination('archive')">查看归档</button>
+              </div>
+              <div v-else-if="selectedMemory.embeddingStatus === 'failed'" class="memory-index-banner failed" role="status">
+                <span>正文已保存，向量生成失败。{{ selectedMemory.embeddingError }}</span>
+                <button @click="navigate(() => { view = 'archive'; })">查看处理队列</button>
+              </div>
+              <MemoryProvenance :memory="selectedMemory" :adopting="adopting" @adopt="adoptSuggestion" />
+              <MarkdownView :markdown="selectedMemory.markdown" :title="selectedMemory.title" />
+              <div v-if="selectedMemory.source" class="memory-source">
+                <FileText :size="16" />
+                <div>
+                  <span>来源</span>
+                  <p>{{ selectedMemory.source }}</p>
+                </div>
+              </div>
+              <section v-if="relatedMemories.length" class="related-section">
+                <h2>
+                  <Link2 :size="16" />关联记忆<span>{{ relatedMemories.length }}</span>
+                </h2>
+                <button v-for="item in relatedMemories" :key="item.id" class="related-link" :disabled="!item.memory" @click="openRelated(item.id)">
+                  <FileText :size="16" />
+                  <span>{{ item.memory?.title ?? item.id }}<small>{{ item.memory ? repositories.find(repo => repo.id === item.memory?.repositoryId)?.name : '关联条目暂未找到' }}</small>
+                  </span>
+                  <ArrowRight :size="16" />
+                </button>
+              </section>
+              <div class="file-location" :title="selectedMemory.path">
+                <FileText :size="13" />{{ selectedMemory.path }}</div>
+            </article>
           </div>
           <div v-else class="reader-empty">
             <span class="welcome-mark">
